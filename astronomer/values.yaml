@@ -2,7 +2,7 @@
 ### Astronomer global configuration
 #################################
 global:
-  enableArgoCDAnnotation: true # for ArgoCD
+  enableArgoCDAnnotation: true # ArgoCD
 #  fluentdEnabled: false
 #  loggingSidecar:
 #    enabled: true
