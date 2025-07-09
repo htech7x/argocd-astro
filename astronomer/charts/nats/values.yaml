@@ -1,0 +1,323 @@
+###############################
+#                             #
+#  NATS Server Configuration  #
+#                             #
+###############################
+images:
+  nats:
+    repository: quay.io/astronomer/ap-nats-server
+    tag: 2.10.19-4
+    pullPolicy: IfNotPresent
+  exporter:
+    repository: quay.io/astronomer/ap-nats-exporter
+    tag: 0.16.0-5
+    pullPolicy: IfNotPresent
+  dbBootstrapper:
+    repository: quay.io/astronomer/ap-db-bootstrapper
+    tag: 0.37.4
+    pullPolicy: IfNotPresent
+
+
+nats:
+  createJetStreamJob: false
+
+  # In case both external access and advertise are enabled
+  # then a service account would be required to be able to
+  # gather the public ip from a node.
+  serviceAccount:
+    # Specifies whether a ServiceAccount should be created
+    create: false
+    # Annotations to add to the service account
+    annotations: {}
+    # The name of the ServiceAccount to use.
+    # If not set and create is true, a name is generated using the fullname template
+    name: ~
+
+  # The number of connect attempts against discovered routes.
+  connectRetries: 30
+
+  # How many seconds should pass before sending a PING
+  # to a client that has no activity.
+  pingInterval:
+
+  terminationGracePeriodSeconds: 60
+
+  resources: {}
+  #  limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  #  requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+  livenessProbe: {}
+    # httpGet:
+    #   path: /
+    #   port: 8222
+    # initialDelaySeconds: 10
+    # timeoutSeconds: 5
+
+  readinessProbe: {}
+    # httpGet:
+    #   path: /
+    #   port: 8222
+    # initialDelaySeconds: 10
+    # timeoutSeconds: 5
+
+  # Server settings.
+  limits:
+    maxConnections:
+    maxSubscriptions:
+    maxControlLine:
+    maxPayload:
+
+    writeDeadline:
+    maxPending:
+    maxPings:
+    lameDuckDuration:
+
+  regenerateCaEachUpgrade: false
+
+  jetstream:
+    enabled: false
+    serviceAccount:
+      create: true
+      name: ~
+
+
+    # Jetstream Domain
+    domain:
+
+    ##########################
+    #                        #
+    #  Jetstream Encryption  #
+    #                        #
+    ##########################
+    encryption:
+      # Use key if you want to provide the key via Helm Values
+      # key: random_key
+
+      # Use a secret reference if you want to get a key from a secret
+      # secret:
+      #   name: "nats-jetstream-encryption"
+      #   key: "key"
+
+    ##############################
+    #                            #
+    #  Jetstream Memory Storage  #
+    #                            #
+    ##############################
+    memStorage:
+      enabled: false
+      size: 1Gi
+
+    ############################
+    #                          #
+    #  Jetstream File Storage  #
+    #                          #
+    ############################
+    fileStorage:
+      enabled: true
+      storageDirectory: /data
+
+      # Set for use with existing PVC
+      # existingClaim: jetstream-pvc
+      # claimStorageSize: 1Gi
+
+      # Use below block to create new persistent volume
+      # only used if existingClaim is not specified
+      size: 1Gi
+      # storageClassName: ""
+      accessModes:
+        - ReadWriteOnce
+      annotations:
+      # key: "value"
+
+  logging:
+    debug:
+    trace:
+    logtime:
+    connectErrorReports:
+    reconnectErrorReports:
+
+  #######################
+  #                     #
+  #  TLS Configuration  #
+  #                     #
+  #######################
+  #
+  #  # You can find more on how to setup and trouble shoot TLS connections at:
+  #
+  #  # https://docs.nats.io/nats-server/configuration/securing_nats/tls
+  #
+
+  # tls:
+  #   secret:
+  #     name: nats-client-tls
+  #   ca: "ca.crt"
+  #   cert: "tls.crt"
+  #   key: "tls.key"
+
+nameOverride: ""
+imagePullSecrets: []
+
+# Toggle whether to use setup a Pod Security Context
+podSecurityContext:
+   fsGroup: 1000
+# ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
+securityContext:
+   runAsUser: 1000
+   runAsNonRoot: true
+
+## Node labels for pod assignment
+## Ref: https://kubernetes.io/docs/user-guide/node-selection/
+##
+nodeSelector: {}
+
+## Tolerations for pod assignment
+## Ref: https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/
+##
+tolerations: []
+
+# Affinity for pod assignment
+# ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity
+affinity: {}
+
+# Annotations to add to the NATS pods
+# ref: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
+podAnnotations: {}
+# key: "value"
+
+cluster:
+  enabled: true
+  name: nats
+  noAdvertise: false
+
+# Leafnode connections to extend a cluster:
+#
+# https://docs.nats.io/nats-server/configuration/leafnodes
+#
+leafnodes:
+  enabled: false
+  noAdvertise: false
+  # remotes:
+  #   - url: "tls://connect.ngs.global:7422"
+
+  #######################
+  #                     #
+  #  TLS Configuration  #
+  #                     #
+  #######################
+  #
+  #  # You can find more on how to setup and trouble shoot TLS connections at:
+  #
+  #  # https://docs.nats.io/nats-server/configuration/securing_nats/tls
+  #
+
+  #
+  # tls:
+  #   secret:
+  #     name: nats-client-tls
+  #   ca: "ca.crt"
+  #   cert: "tls.crt"
+  #   key: "tls.key"
+
+# Gateway connections to create a super cluster
+#
+# https://docs.nats.io/nats-server/configuration/gateways
+#
+gateway:
+  enabled: false
+  name: "default"
+
+  #############################
+  #                           #
+  #  List of remote gateways  #
+  #                           #
+  #############################
+  # gateways:
+  #   - name: other
+  #     url: nats://my-gateway-url:7522
+
+  #######################
+  #                     #
+  #  TLS Configuration  #
+  #                     #
+  #######################
+  #
+  #  # You can find more on how to setup and trouble shoot TLS connections at:
+  #
+  #  # https://docs.nats.io/nats-server/configuration/securing_nats/tls
+  #
+  # tls:
+  #   secret:
+  #     name: nats-client-tls
+  #   ca: "ca.crt"
+  #   cert: "tls.crt"
+  #   key: "tls.key"
+
+# NATS Box
+#
+# https://github.com/nats-io/nats-box
+#
+natsbox:
+  enabled: false
+
+# The NATS config reloader image to use.
+reloader:
+  enabled: false
+  resources: {}
+  #  limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  #  requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+# Prometheus NATS Exporter configuration.
+exporter:
+  enabled: true
+  # resource configuration for the metrics sidecar
+  resources:
+    limits:
+     cpu: 100m
+     memory: 128Mi
+    requests:
+     cpu: 50m
+     memory: 100Mi
+
+# Authentication setup
+auth:
+  enabled: false
+
+  # Reference to the Operator JWT.
+  # operatorjwt:
+  #   configMap:
+  #     name: operator-jwt
+  #     key: KO.jwt
+
+  # Public key of the System Account
+  # systemAccount:
+
+  # resolver:
+  #   ############################
+  #   #                          #
+  #   # Memory resolver settings #
+  #   #                          #
+  #   ##############################
+  #   # type: memory
+  #   #
+  #   # Use a configmap reference which will be mounted
+  #   # into the container.
+  #   #
+  #   # configMap:
+  #   #   name: nats-accounts
+  #   #   key: resolver.conf
+  #
+  #   ##########################
+  #   #                        #
+  #   #  URL resolver settings #
+  #   #                        #
+  #   ##########################
+  #   # type: URL
+  #   # url: "http://nats-account-server:9090/jwt/v1/accounts/"

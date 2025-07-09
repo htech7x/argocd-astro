@@ -1,0 +1,220 @@
+# Default values for Prometheus.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+nodeSelector: {}
+affinity: {}
+tolerations: []
+podLabels: {}
+
+# Prometheus is not designed to be horizontally scalable behind a single load
+# balancer. This configuration will increase the replicas in the Prometheus
+# StatefulSet, and assign a different Service to each Pod. In this way,
+# applications with high availability requirements may handle retrying for
+# missing data on the other Service(s). The StatefulSet will manage the Pods
+# such that only one is replaced at a time.
+replicas: 1
+
+images:
+  prometheus:
+    repository: quay.io/astronomer/ap-prometheus
+    tag: 2.53.4
+    pullPolicy: IfNotPresent
+  configReloader:
+    repository: quay.io/astronomer/ap-configmap-reloader
+    tag: 0.15.0
+    pullPolicy: IfNotPresent
+  filesdReloader:
+    repository: quay.io/astronomer/ap-kuiper-reloader
+    tag: 0.1.6
+    pullPolicy: IfNotPresent
+
+
+resources: {}
+#  limits:
+#   cpu: 100m
+#   memory: 128Mi
+#  requests:
+#   cpu: 100m
+#   memory: 128Mi
+
+podAnnotations: {}
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ~
+
+livenessProbe: {}
+  # httpGet:
+  #   path: /-/healthy
+  #   port: {{ .Values.ports.http }}
+  # initialDelaySeconds: 10
+  # periodSeconds: 5
+  # failureThreshold: 3
+  # timeoutSeconds: 1
+readinessProbe: {}
+  # httpGet:
+  #   path: /-/ready
+  #   port: {{ .Values.ports.http }}
+  # initialDelaySeconds: 10
+  # periodSeconds: 5
+  # failureThreshold: 3
+  # timeoutSeconds: 1
+
+podSecurityContext:
+  fsGroup: 65534
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 65534
+configMapReloader:
+  livenessProbe: {}
+  readinessProbe: {}
+  resources: {}
+    # limits:
+    #   cpu: 100m
+    #   memory: 25Mi
+    # requests:
+    #   cpu: 100m
+    #   memory: 25Mi
+
+filesdReloader:
+  livenessProbe: {}
+  readinessProbe: {}
+  resources: {}
+    # limits:
+    #   cpu: 100m
+    #   memory: 25Mi
+    # requests:
+    #   cpu: 100m
+    #   memory: 25Mi
+  extraEnv: []
+
+# Which directory prometheus data should be stored
+dataDir: "/prometheus"
+
+# How long prometheus should keep data before removing
+retention: 15d
+
+# Enable persistence for Prometheus
+persistence:
+  enabled: true
+  size: 100Gi
+  storageClassName: ~
+  annotations: {}
+  persistentVolumeClaimRetentionPolicy: ~
+
+ports:
+  http: 9090
+
+ingressNetworkPolicyExtraSelectors: []
+
+astroHTTPTargets:
+  commander: true
+  houston: true
+  registry: true
+  grafana: true
+  kibana: true
+  elasticsearch: true
+
+# additional HTTP endpoints to use as targets
+#  for the blackbox exporter HTTP tests
+# astronomer platform targets are already include in the template
+httpTargets: {}
+
+# list of 1 or more DNS servers to use as targets
+# for the blackbox exporter DNS tests
+dnsTargets:
+  - 10.98.0.10
+
+# Blackbox exporter tcp probe configuration
+# Currently is only configured to scape two targets
+# listed below. To disable the probe and all of the targets
+# set tcpProbe.enabled to false.
+tcpProbe:
+  enabled: false
+  # Enable Blackbox TCP Probe for pg sql proxy in cloud
+  probePGProxy: true
+  # Enable Blackbox TCP Probe for tiller in cloud
+  probeTiller: true
+
+# Enable prometheus lifecycle api
+enableLifecycle: true
+
+# This section allows you to disable parts of the default set of alerts. Use
+# this in combination with additionalAlerts if you want prometheus to only
+# use the alerts you have configured.
+defaultAlerts:
+  airflow:
+    enabled: true
+  platform:
+    enabled: true
+
+additionalAlerts:
+  # Additional rules appended to the default 'platform' alert group
+  # Provide as a block string in yaml list form
+  platform: ~
+  # Additional rules appended to the default 'airflow' alert group
+  # Provide as a block string in yaml list form
+  airflow: ~
+# Example:
+# airflow: |
+#   - alert: MyExampleAlert
+#     # If greater than 10% task failure
+#     expr: 100 * sum(increase(airflow_ti_failures[30m])) /  (sum(increase(airflow_ti_failures[30m])) + sum(increase(airflow_ti_successes[30m]))) > 10
+#     for: 15m
+#     labels:
+#       tier: airflow
+#     annotations:
+#       summary: "The Astronomer Helm release {{ .Release.Name }} is failing task instances {{ printf \"%.2f\" $value }}% of the time over the past 30 minutes"
+#       description: Task instances failing above threshold
+additionalScrapeJobs: {}
+# Example:
+# additionalScrapeJobs:
+#   - job_name: 'my-job'
+#     kubernetes_sd_configs:
+#       - role: endpoints
+#     relabel_configs:
+#       - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
+#         action: keep
+#         regex: true
+#       - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scheme]
+#         action: replace
+#         target_label: __scheme__
+#         regex: (https?)
+#       - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_path]
+#         action: replace
+#
+
+# Prometheus config file remote_write stanza
+# https://prometheus.io/docs/prometheus/latest/configuration/configuration/
+# remote_write: {}
+
+# Prometheus config file global.external_labels stanza
+# https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write
+# external_labels: {}
+
+extraFlags: []
+#- "--log.level=debug"
+
+# Amost mirror the prometheus config data structure for values we want to customize.
+# Convert lists to dicts for more explicit assignment.
+# Convert dashes to underscores for golang compatibility.
+config:
+  enableSelfScrape: true
+  scrape_configs:
+    kubernetes_apiservers:
+      tls_config:
+        insecure_skip_verify: false
+
+rbac:
+  role:
+    kind: ClusterRole
+    create: true
+
+priorityClassName: ~

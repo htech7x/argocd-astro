@@ -1,0 +1,85 @@
+###########################
+## Kube State Deployment ##
+###########################
+{{- $useRoles := or .Values.global.features.namespacePools.enabled .Values.global.singleNamespace }}
+{{- $namespaces := .Values.global.features.namespacePools.namespaces.names }}
+{{- $namespaces = append $namespaces .Release.Namespace }}
+{{- $namespaceList := join "," $namespaces }}
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: {{ template "kube-state.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    tier: {{ template "kube-state.name" . }}
+    component: kube-state
+    release: {{ .Release.Name }}
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+    heritage: {{ .Release.Service }}
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels:
+      tier: {{ template "kube-state.name" . }}
+      component: kube-state
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        tier: {{ template "kube-state.name" . }}
+        component: kube-state
+        release: {{ .Release.Name }}
+        app: {{ template "kube-state.name" . }}
+        version: {{ .Chart.Version }}
+        {{- include "global.podLabels" . | nindent 8 }}
+{{- if or .Values.global.podAnnotations .Values.podAnnotations }}
+      annotations:
+{{- if .Values.global.podAnnotations }}
+{{ toYaml .Values.global.podAnnotations | indent 8 }}
+{{- end }}
+{{- if .Values.podAnnotations }}
+{{ toYaml .Values.podAnnotations | indent 8 }}
+{{- end }}
+{{- end }}
+    spec:
+    {{- if .Values.priorityClassName }}
+      priorityClassName: {{ .Values.priorityClassName }}
+    {{- end }}
+      securityContext: {{ toYaml .Values.podSecurityContext | nindent 8 }}
+      nodeSelector: {{ toYaml (default .Values.global.platformNodePool.nodeSelector .Values.nodeSelector) | nindent 8 }}
+      affinity: {{ toYaml (default .Values.global.platformNodePool.affinity .Values.affinity) | nindent 8 }}
+      tolerations: {{ toYaml (default .Values.global.platformNodePool.tolerations .Values.tolerations) | nindent 8 }}
+      serviceAccountName: {{ template "kube-state.serviceAccountName" . }}
+      {{- include "kube-state.imagePullSecrets" . | nindent 6 }}
+      containers:
+      - name: kube-state
+        args:
+      {{- if $useRoles }}
+        - --namespaces={{ $namespaceList }}
+      {{- end }}
+        - --resources={{ .Values.collectors | join "," }}
+      {{- if .Values.extraArgs }}
+          {{- .Values.extraArgs | toYaml | nindent 8 }}
+      {{- end }}
+        image: {{ include "kube-state.image" . }}
+        securityContext: {{ toYaml .Values.securityContext| nindent 12 }}
+        imagePullPolicy: {{ .Values.images.kubeState.pullPolicy }}
+        ports:
+        - name: scrape
+          containerPort: {{ .Values.ports.scrape }}
+        - name: telemetry
+          containerPort: {{ .Values.ports.telemetry }}
+        {{- if .Values.readinessProbe }}
+        readinessProbe: {{ tpl (toYaml .Values.readinessProbe) . | nindent 12 }}
+        {{- end }}
+        {{ if .Values.livenessProbe }}
+        livenessProbe: {{ tpl (toYaml .Values.livenessProbe) . | nindent 12 }}
+        {{ else }}
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: {{ .Values.ports.scrape }}
+          initialDelaySeconds: 5
+          timeoutSeconds: 5
+        {{- end }}
+        resources: {{ toYaml .Values.resources | nindent 12 }}

@@ -1,0 +1,18 @@
+repo_build_state:
+  CIRCLE_BUILD_NUM: '240775'
+  CIRCLE_BUILD_URL: https://circleci.com/gh/astronomer/astronomer/240775
+  CIRCLE_JOB: build-artifact
+  CIRCLE_REPOSITORY_URL: git@github.com:astronomer/astronomer.git
+  CIRCLE_SHA1: 7108f4e92819c902289dc60f84cfa71f281cf236
+  CIRCLE_WORKFLOW_ID: 7f4ba037-62ba-4921-8be7-86cfcf93b303
+  build_date_iso8601: '2025-07-07T21:25:36.002037+00:00'
+  git_branch: release-0.37
+  git_origin: git@github.com:astronomer/astronomer.git
+  git_sha: 7108f4e92819c902289dc60f84cfa71f281cf236
+  helm_path: /tmp/bin/helm
+  helm_version: v3.17.3+ge4da497
+test_k8s_versions:
+- 1.29.14
+- 1.30.10
+- 1.31.6
+- 1.32.2

@@ -1,0 +1,634 @@
+##################################
+## Astronomer Houston ConfigMap ##
+##################################
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-houston-config
+  labels:
+    component: houston
+    tier: astronomer
+    release: {{ .Release.Name }}
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+    heritage: {{ .Release.Service }}
+data:
+  {{ if and .Values.houston.runtimeReleasesConfig ( not .Values.houston.runtimeReleasesConfigMapName ) }}
+  astro_runtime_releases.json: |
+    {{ .Values.houston.runtimeReleasesConfig | toJson }}
+  # These are system-specified config overrides.
+  {{- end }}
+  production.yaml: |
+    webserver:
+      port: {{ .Values.ports.houstonHTTP }}
+
+    commander:
+      enabled: true
+
+    ui:
+      port: 80
+
+    email:
+      smtpUrl: ~
+
+    auth:
+      local:
+        enabled: false
+
+      openidConnect:
+        auth0:
+          enabled: false
+          clientId: "rH2L4yKctlepniTyJW3MkuXuTreOHHn1"
+          baseDomain: "astronomerio.auth0.com"
+
+        google:
+          enabled: true
+          clientId: ~
+
+      github:
+        enabled: true
+
+    {{- if  .Values.global.nats.jetStream.enabled }}
+    nats:
+      jetStreamEnabled: {{ .Values.global.nats.jetStream.enabled  }}
+      {{- include "jetstreamTLS" . | indent 6 }}
+    {{ end }}
+
+
+    helm:
+      baseDomain: {{ .Values.global.baseDomain }}
+      registryAuthSecret: {{ .Values.registry.auth.secretName }}
+      releaseName: {{ .Release.Name }}
+      releaseNamespace: {{ .Release.Namespace }}
+      releaseVersion: {{ .Chart.Version }}
+      singleNamespace: {{ .Values.global.singleNamespace }}
+      {{- if .Values.global.tlsSecret }}
+      tlsSecretName: {{ .Values.global.tlsSecret }}
+      {{- end }}
+    # Airflow deployment configuration
+    deployments:
+      mode:
+        operator:
+          enabled: {{.Values.global.airflowOperator.enabled}}
+      disableManageClusterScopedResources: {{ default false ( or .Values.global.disableManageClusterScopedResources  .Values.global.features.namespacePools.enabled ) }}
+      fluentdIndexPrefix: {{ include "fluentd.IndexPattern" .}}
+      enableHoustonInternalAuthorization: {{ include "houston.InternalAuthorization" . }}
+      dagOnlyDeployment: {{ .Values.global.dagOnlyDeployment.enabled }}
+      namespaceFreeFormEntry: {{ .Values.global.namespaceFreeFormEntry }}
+      # Airflow chart settings
+      # Static helm configurations for this chart are found below.
+      chart:
+        version: {{ .Values.airflowChartVersion }}
+
+      # Kubernetes labels to add on each airflow deployment namespace
+      namespaceLabels:
+        platform-release: {{ .Release.Name }}
+
+      {{ if or .Values.global.customLogging.enabled }}
+      # Disables Kibana dashboard in Astro UI
+      kibanaUIEnabled: false
+      {{ end }}
+
+      taskUsageReport:
+        taskUsageMetricsEnabled: {{ .Values.global.taskUsageMetricsEnabled }}
+        taskUsageReportNumberOfDays: {{ .Values.houston.cleanupTaskUsageData.olderThan}}
+
+      deployRollback:
+        enabled: {{ .Values.global.deployRollbackEnabled }}
+        deployRevisionReportNumberOfDays: {{ .Values.houston.cleanupDeployRevisions.olderThan}}
+
+      cleanupAirflowDb:
+        enabled: {{ .Values.houston.cleanupAirflowDb.enabled }}
+
+      {{ if .Values.global.features.namespacePools.enabled }}
+      hardDeleteDeployment: true
+      manualNamespaceNames: true
+      preCreatedNamespaces:
+      {{- range $i, $namespaceName := .Values.global.features.namespacePools.namespaces.names }}
+        - name: {{ $namespaceName }}
+      {{- end }}
+      {{ end }}
+
+      {{- if .Values.global.authSidecar.enabled }}
+      # enables nginx auth sidecar for airflow deployments
+      {{- $authSidecar := include "authSidecar.image" . }}
+      authSideCar:
+        enabled: true
+        ingressAllowedNamespaces: {{ default (list) .Values.global.authSidecar.ingressAllowedNamespaces | toJson }}
+        repository: {{ (splitList ":"  $authSidecar ) | first  }}
+        tag: {{ (splitList ":"  $authSidecar ) | last  }}
+        port: {{ .Values.global.authSidecar.port }}
+        pullPolicy: {{ .Values.global.authSidecar.pullPolicy }}
+        {{- if .Values.global.authSidecar.securityContext}}
+        securityContext: {{- .Values.global.authSidecar.securityContext | toYaml | nindent 10 }}
+        {{- end }}
+        {{- if .Values.global.authSidecar.livenessProbe}}
+        livenessProbe: {{- .Values.global.authSidecar.livenessProbe | toYaml | nindent 10 }}
+        {{- end }}
+        {{- if .Values.global.authSidecar.readinessProbe}}
+        readinessProbe: {{- .Values.global.authSidecar.readinessProbe | toYaml | nindent 10 }}
+        {{- end }}
+        resources: {{- .Values.global.authSidecar.resources | toYaml | nindent 10 }}
+        annotations: {
+          {{- range $key, $value := .Values.global.extraAnnotations}}
+          {{ $key }}: {{ $value | quote }},
+          {{- end }}
+        }
+      {{- end }}
+
+      {{- if .Values.global.loggingSidecar.enabled }}
+      # enables sidecar logging for airflow deployments
+      loggingSidecar:
+        enabled: true
+        name: {{ .Values.global.loggingSidecar.name }}
+        image: {{ include "loggingSidecar.image" . }}
+        customConfig: {{ .Values.global.loggingSidecar.customConfig }}
+        {{- if .Values.global.loggingSidecar.extraEnv}}
+        extraEnv: {{- .Values.global.loggingSidecar.extraEnv | toYaml | nindent 8 }}
+        {{- end }}
+        {{- if .Values.global.loggingSidecar.securityContext}}
+        securityContext: {{- .Values.global.loggingSidecar.securityContext | toYaml | nindent 10 }}
+        {{- end }}
+        {{- if .Values.global.loggingSidecar.resources}}
+        resources: {{- .Values.global.loggingSidecar.resources | toYaml | nindent 10 }}
+        {{- end }}
+        {{- if .Values.global.loggingSidecar.indexPattern }}
+        indexPattern: {{ .Values.global.loggingSidecar.indexPattern | squote }}
+        {{- end }}
+        {{- if .Values.global.logging.indexNamePrefix }}
+        indexNamePrefix: {{ .Values.global.logging.indexNamePrefix }}
+        {{- end }}
+        {{- if .Values.global.loggingSidecar.livenessProbe}}
+        livenessProbe: {{- .Values.global.loggingSidecar.livenessProbe | toYaml | nindent 10 }}
+        {{- end }}
+        {{- if .Values.global.loggingSidecar.readinessProbe}}
+        readinessProbe: {{- .Values.global.loggingSidecar.readinessProbe | toYaml | nindent 10 }}
+        {{- end }}
+      {{- end }}
+
+      {{- if .Values.global.dagOnlyDeployment.enabled }}
+      # enables dag only deployment for airflow deployments
+      {{- $dagOnlyDeployment := include "dagOnlyDeployment.image" . }}
+      dagDeploy:
+        enabled: {{ .Values.global.dagOnlyDeployment.enabled }}
+        images:
+          dagServer:
+            repository: {{ (splitList ":"  $dagOnlyDeployment ) | first  }}
+            tag: {{ (splitList ":"  $dagOnlyDeployment ) | last  }}
+        {{- if .Values.global.dagOnlyDeployment.securityContexts }}
+        securityContexts: {{ template "dagOnlyDeployment.securityContexts" . }}
+        {{- end }}
+        {{- if or
+          .Values.global.dagOnlyDeployment.resources
+          .Values.global.dagOnlyDeployment.server.livenessProbe
+          .Values.global.dagOnlyDeployment.server.readinessProbe
+        }}
+        server:
+        {{- if .Values.global.dagOnlyDeployment.resources }}
+          resources: {{- .Values.global.dagOnlyDeployment.resources | toYaml | nindent 12 }}
+        {{- end }}
+        {{- if .Values.global.dagOnlyDeployment.server.livenessProbe }}
+          livenessProbe: {{- .Values.global.dagOnlyDeployment.server.livenessProbe | toYaml | nindent 12 }}
+        {{- end }}
+        {{- if .Values.global.dagOnlyDeployment.server.readinessProbe }}
+          readinessProbe: {{- .Values.global.dagOnlyDeployment.server.readinessProbe | toYaml | nindent 12 }}
+        {{- end }}
+        {{- end }}
+        {{- if or
+          .Values.global.dagOnlyDeployment.resources
+          .Values.global.dagOnlyDeployment.client.livenessProbe
+          .Values.global.dagOnlyDeployment.client.readinessProbe
+        }}
+        client:
+        {{- if .Values.global.dagOnlyDeployment.resources }}
+          resources: {{- .Values.global.dagOnlyDeployment.resources | toYaml | nindent 12 }}
+        {{- end }}
+        {{- if .Values.global.dagOnlyDeployment.client.livenessProbe }}
+          livenessProbe: {{- .Values.global.dagOnlyDeployment.client.livenessProbe | toYaml | nindent 12 }}
+        {{- end }}
+        {{- if .Values.global.dagOnlyDeployment.client.readinessProbe }}
+          readinessProbe: {{- .Values.global.dagOnlyDeployment.client.readinessProbe | toYaml | nindent 12 }}
+        {{- end }}
+        {{- end }}
+        {{- if .Values.global.dagOnlyDeployment.persistence }}
+        persistence: {{- .Values.global.dagOnlyDeployment.persistence | toYaml | nindent 10 }}
+        {{- end }}
+        {{ if .Values.global.dagOnlyDeployment.serviceAccount }}
+        serviceAccount: {{- .Values.global.dagOnlyDeployment.serviceAccount | toYaml | nindent 10 }}
+        {{- end }}
+      {{- end }}
+
+      # These values get passed directly into the airflow helm deployments
+      helm:
+
+      {{- if and .Values.global.ssl.enabled .Values.global.ssl.mode }}
+        sslmode: {{ .Values.global.ssl.mode }}
+      {{- end }}
+
+        # If security context constraints are enabled, enable SCCs for airflow-chart
+        sccEnabled: {{ .Values.global.sccEnabled }}
+      {{- if and .Values.global.extraAnnotations ( not .Values.global.authSidecar.enabled ) }}
+        ingress:
+          extraIngressAnnotations: {{- toYaml .Values.global.extraAnnotations | nindent 12 }}
+      {{- end }}
+
+      {{- if .Values.global.networkNSLabels }}
+        networkNSLabels: true
+      {{- end }}
+        astronomer:
+          images:
+            certgenerator:
+              repository: "{{ .Values.global.certgenerator.images.repository }}"
+              tag: "{{ .Values.global.certgenerator.images.tag }}"
+        gitSyncRelay:
+          images:
+            gitDaemon:
+              repository: {{ .Values.global.gitSyncRelay.images.gitDaemon.repository }}
+              tag: {{ .Values.global.gitSyncRelay.images.gitDaemon.tag }}
+            gitSync:
+              repository: {{ .Values.global.gitSyncRelay.images.gitSync.repository }}
+              tag: {{ .Values.global.gitSyncRelay.images.gitSync.tag }}
+
+        airflow:
+          images:
+            statsd:
+              repository: "{{ .Values.global.airflow.images.statsd.repository }}"
+              tag: "{{ .Values.global.airflow.images.statsd.tag }}"
+            redis:
+              repository: "{{ .Values.global.airflow.images.redis.repository }}"
+              tag: "{{ .Values.global.airflow.images.redis.tag }}"
+            pgbouncer:
+              repository: "{{ .Values.global.airflow.images.pgbouncer.repository }}"
+              tag: "{{ .Values.global.airflow.images.pgbouncer.tag }}"
+            pgbouncerExporter:
+              repository: "{{ .Values.global.airflow.images.pgbouncerExporter.repository }}"
+              tag: "{{ .Values.global.airflow.images.pgbouncerExporter.tag }}"
+            gitSync:
+              repository: "{{ .Values.global.airflow.images.gitSync.repository }}"
+              tag: "{{ .Values.global.airflow.images.gitSync.tag }}"
+
+          useAstroSecurityManager: true
+          {{- if .Values.global.networkPolicy.enabled }}
+          networkPolicies:
+          # Enabled network polices to restrict the way pods can communicate.
+            enabled: true
+          {{ end }}
+          {{- if .Values.global.openshiftEnabled }}
+          dags:
+              gitSync:
+                securityContexts:
+                  container:
+                    runAsNonRoot: true
+          {{ end }}
+          # Enable FlowerUI flag by default
+          flower:
+            enabled: true
+            {{ if .Values.global.openshiftEnabled }}
+            securityContexts:
+              pod:
+                runAsNonRoot: true
+            {{ end }}
+          webserver:
+            {{ if .Values.configSyncer.enabled }}
+            extraVolumeMounts:
+              - name: signing-certificate
+                mountPath: /etc/airflow/tls
+                readOnly: true
+            extraVolumes:
+              - name: signing-certificate
+                secret:
+                  # This is the name of the secret that gets copied from the platform namespace
+                  # to the airflow namespaces.
+                  secretName: {{ template "houston.jwtCertificateSecret" . }}
+            {{ end  }}
+            {{ if .Values.global.openshiftEnabled }}
+            securityContexts:
+              pod:
+                runAsNonRoot: true
+            {{ end  }}
+            resources:
+              limits:
+                # XXX: There is an alert configured to trigger when ephemeral storage reaches
+                # 1800000000 bytes (90% of the 2Gi limit). Be aware of this when modifying
+                # ephemeral-storage limits.
+                ephemeral-storage: "2Gi"
+              requests:
+                ephemeral-storage: "1Gi"
+
+            # Disable creation of initial user.
+            defaultUser:
+              enabled: false
+      {{- if .Values.global.azure.enabled }}
+            livenessProbe:
+              failureThreshold: 25
+              periodSeconds: 10
+      {{- end }}
+
+          # Worker configuration (applies to Celery and Kubernetes task pods).
+          workers:
+            {{ if .Values.global.openshiftEnabled }}
+            securityContexts:
+              pod:
+                runAsNonRoot: true
+            {{ end  }}
+            resources:
+              limits:
+                ephemeral-storage: "2Gi"
+              requests:
+                ephemeral-storage: "1Gi"
+
+            # This is here for upgrading to 0.11.2+ of airflow-chart
+            safeToEvict: true
+
+          scheduler:
+            {{ if .Values.global.openshiftEnabled }}
+            securityContexts:
+              pod:
+                runAsNonRoot: true
+            {{ end  }}
+
+            podDisruptionBudget:
+              enabled: false
+
+              # PDB configuration
+              config:
+                maxUnavailable: 1
+
+            # This is here for upgrading to 0.11.2+ of airflow-chart
+            safeToEvict: true
+
+            resources:
+              limits:
+                ephemeral-storage: "2Gi"
+              requests:
+                ephemeral-storage: "1Gi"
+
+            strategy:
+              type: RollingUpdate
+              rollingUpdate:
+                maxUnavailable: 1
+
+
+          airflowLocalSettings: |
+            # This pod mutation hook runs for all pods dynamically created by Airflow
+            # in Kubernetes (K8s). This includes K8s executor Airflow-workers, which is
+            # an alternative executor to Celery, and K8s Pod Operator (KPO) pods, which is
+            # an Airflow operator that launches a task in a K8s cluster.
+            #
+            # This function is responsible for two things. It assigns labels to disambiguate
+            # between KPO and K8s executor pods. Also, it handles writing the entrypoint for
+            # K8s executor pods. Why we do this second part, you can read below.
+            from airflow.providers.cncf.kubernetes.utils.xcom_sidecar import PodDefaults
+            from airflow.configuration import conf
+            from airflow.version import version
+            xcom_sidecar_image = "{{ template "defaultXcomSidecarImage" . }}"
+            PodDefaults.SIDECAR_CONTAINER.image = xcom_sidecar_image
+            def pod_mutation_hook_deprecated(pod):
+              from airflow.contrib.kubernetes.pod import Pod
+              extra_labels = {
+                  "kubernetes-pod-operator": "False"
+              }
+              if 'airflow-worker' in pod.labels.keys() and \
+                      conf.get('core', 'EXECUTOR') == "KubernetesExecutor":
+                  # extra_labels["kubernetes-executor"] = "True"
+                  # By default, Airflow overwrites the entrypoint
+                  # of KPO and K8s executor Airflow-worker pods.
+                  # K8s worker pods are Airflow containers, and we can assume these
+                  # Airflow containers are vendored by Astronomer. Astronomer provides
+                  # an entrypoint in these containers to handle waiting for the network
+                  # and the database to be ready, so we do not want this entrypoint
+                  # to be overwritten. This helps with the stability of the K8s executor.
+                  if "1.10" in version:
+                      if not pod.args:
+                          pod.args = []
+                      pod.args = pod.cmds + pod.args
+                  pod.cmds = ["tini", "--", "/entrypoint"]
+              else:
+                  # In the case of KPO, we allow Airflow to overwrite the entrypoint
+                  # because we do not know what the container will be (and it's probably
+                  # not a container vendored by Astronomer, and it's definitely not
+                  # an Airflow container).
+                  extra_labels["kubernetes-pod-operator"] = "True"
+                  extra_labels["kubernetes-executor"] = "False"
+              pod.labels.update(extra_labels)
+            def pod_mutation_hook_new(pod):
+              extra_labels = {
+                  "kubernetes-pod-operator": "False"
+              }
+              if 'airflow-worker' in pod.metadata.labels.keys() and \
+                      conf.get('core', 'EXECUTOR') == "KubernetesExecutor":
+                  # extra_labels["kubernetes-executor"] = "True"
+                  # By default, Airflow overwrites the entrypoint
+                  # of KPO and K8s executor Airflow-worker pods.
+                  # K8s worker pods are Airflow containers, and we can assume these
+                  # Airflow containers are vendored by Astronomer. Astronomer provides
+                  # an entrypoint in these containers to handle waiting for the network
+                  # and the database to be ready, so we do not want this entrypoint
+                  # to be overwritten. This helps with the stability of the K8s executor.
+                  container = pod.spec.containers[0]
+                  if "1.10" in version:
+                      if not container.args:
+                          container.args = []
+                      container.args = container.command + container.args
+                  container.command = ["tini", "--", "/entrypoint"]
+                  pod.spec.containers[0] = container
+      {{ if .Values.global.loggingSidecar.enabled }}
+                  # For sidecar logging we override the default entrypoint to redirect logs to
+                  # files that are consumed by the sidecar container. The command ends by creating
+                  # the file /var/log/sidecar-log-consumer/finished, which signals the sidecar log
+                  # consumer to exit.
+                  from textwrap import dedent
+                  import shlex
+                  cmd_init = dedent(
+                      r"""
+                      echo '
+                      import signal
+                      import sys
+                      import subprocess
+                      import time
+                      from pathlib import Path
+                      process = subprocess.Popen(sys.argv[1:])
+                      def handler(signum, frame):
+                          process.kill()
+                          print("Process killed")
+                      signal.signal(signal.SIGINT, handler)
+                      while True:
+                          time.sleep(5)
+                          with open("/var/log/sidecar-log-consumer/heartbeat", "w") as f:
+                              f.write(f"{time.time()}\n")
+                          if process.poll() is not None:
+                              break
+                      print("Process exited")
+                      Path("/var/log/sidecar-log-consumer/finished").touch()
+                      ' | python3 - """
+                  )
+                  log_cmd = " 1> >( tee -a /var/log/sidecar-log-consumer/out.log ) 2> >( tee -a /var/log/sidecar-log-consumer/err.log >&2 ) ; "
+                  if container.args[0:3] == ["airflow", "tasks", "run"]:
+                      container.command = ["tini", "--"]
+                      new_args = ["bash", "-c"]
+                      command_str = (
+                          cmd_init
+                          + " /entrypoint "
+                          + shlex.join([str(arg) for arg in container.args])
+                          + log_cmd
+                      )
+                      new_args.append(command_str)
+                      container.args = new_args
+      {{ end }}
+              else:
+                  # In the case of KPO, we allow Airflow to overwrite the entrypoint
+                  # because we do not know what the container will be (and it's probably
+                  # not a container vendored by Astronomer, and it's definitely not
+                  # an Airflow container).
+                  extra_labels["kubernetes-pod-operator"] = "True"
+                  extra_labels["kubernetes-executor"] = "False"
+              pod.metadata.labels.update(extra_labels)
+            def pod_mutation_hook(pod):
+              try:
+                pod_mutation_hook_new(pod)
+              except Exception as e:
+                pod_mutation_hook_deprecated(pod)
+
+
+          # Redis settings
+          redis:
+            # This is here for upgrading to 0.11.2+ of airflow-chart
+            safeToEvict: true
+            {{ if .Values.global.openshiftEnabled }}
+            securityContexts:
+              pod:
+                runAsNonRoot: true
+            {{ end }}
+
+          {{ if .Values.global.openshiftEnabled }}
+          # Statsd settings
+          statsd:
+            securityContexts:
+              pod:
+                runAsNonRoot: true
+
+          # Triggerer settings
+          triggerer:
+            securityContexts:
+              pod:
+                runAsNonRoot: true
+
+          # migrateDatabaseJob  settings
+          migrateDatabaseJob:
+            securityContexts:
+              pod:
+                runAsNonRoot: true
+
+          # dagProcessor settings
+          dagProcessor:
+            securityContexts:
+              pod:
+                runAsNonRoot: true
+
+          {{ end }}
+
+          # Pgbouncer settings
+          pgbouncer:
+            {{ if .Values.global.openshiftEnabled }}
+            securityContexts:
+              pod:
+                runAsNonRoot: true
+            command: ["pgbouncer", "/etc/pgbouncer/pgbouncer.ini"]
+            {{ end }}
+            podDisruptionBudget:
+              enabled: false
+
+              # PDB configuration
+              config:
+                maxUnavailable: 1
+
+          # Default quotas for airflow deployments.
+          quotas:
+            requests.ephemeral-storage: "50Gi"
+            limits.ephemeral-storage: "50Gi"
+
+          # This is here for backward compatibility.
+          # 0.11+ versions of airflow-chart have this defined
+          # so this needs to be passed through to all upgrades.
+          podMutation:
+            tolerations: []
+
+          # This is here for upgrading to 0.11.0+ of airflow-chart
+          defaultAirflowRepository: quay.io/astronomer/ap-airflow
+
+      {{- if not .Values.global.singleNamespace }}
+          # Enable cleanup CronJob in Airflow deployents
+          # to cleanup evicted/failed/succeeded pods.
+          cleanup:
+            enabled: true
+            {{/*
+            Generate a deterministic random-ish decimal digit from the .Release.Name, which is used to generate
+            the minute field of the cron schedule. This is effectively a splay seeded by the release name.
+            This is used to spread the load of this job away from high-use minutes 0,15,30,45.
+            This template is passed to the airflow chart as a string where the template is interpreted in that
+            context, including the airflow-chart's .Release.Name.
+            */}}
+            schedule: {{`'{{- add 3 (regexFind ".$" (adler32sum .Release.Name)) -}}-59/15 * * * *'`}}
+            command:
+            - airflow-cleanup-pods
+            - --namespace={{`{{ .Release.Namespace }}`}}
+            args: []
+            serviceAccount:
+              create: true
+            {{ if .Values.global.openshiftEnabled }}
+            securityContexts:
+              pod:
+                runAsNonRoot: true
+            {{ end  }}
+      {{- end }}
+
+          # Disable the postgres subchart. The platform pass credentials down
+          # from the platform configuration.
+          postgresql:
+            enabled: false
+
+        # If we're in single namespace mode, we will also skip the configuration
+        # for elasticsearch. Houston will fallback to its default modes, which are
+        # false/disabled.
+        #
+        # XXX: We may want to decouple these configurations from the singleNamespace config.
+        # At the moment, this is a convenient helper to require a minimal config change to
+        # run the platform in single namespace mode. Fluentd requires a ClusterRole to enrich
+        # logs with kubernetes metadata. In a single namespace environment, we're likely not
+        # going to get a ClusterRole from admins.
+
+        {{- if .Values.global.customLogging.enabled }}
+          elasticsearch:
+            enabled: true
+            connection:
+              host: {{ printf "%s-external-es-proxy.%s" .Release.Name .Release.Namespace }}
+              port: 9200
+
+    elasticsearch:
+      enabled: true
+      client:
+        node: {{ printf "http://%s-external-es-proxy:9201" .Release.Name }}
+        log: error
+    {{- end }}
+
+        {{- if and (not .Values.global.singleNamespace ) (not .Values.global.customLogging.enabled ) }}
+          elasticsearch:
+            enabled: true
+            connection:
+              host: {{ printf "%s-elasticsearch-nginx.%s" .Release.Name .Release.Namespace }}
+              port: 9200
+
+    elasticsearch:
+      enabled: true
+      client:
+        node: {{ printf "http://%s-elasticsearch:9200" .Release.Name }}
+        log: error
+    {{- end }}
+
+    prometheus:
+      enabled: true
+      host: {{ printf "%s-prometheus" .Release.Name }}
+    updateRuntimeCheckEnabled: {{ .Values.houston.updateRuntimeCheck.enabled }}
+
+  # These are any user-specified config overrides.
+  local-production.yaml: |
+{{ toYaml .Values.houston.config | indent 4 }}

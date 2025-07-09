@@ -1,0 +1,468 @@
+{{ define "helm.globals" -}}
+  {{- $globals := dict -}}
+  {{- $_ := set $globals "baseDomain" (default "" .Values.global.baseDomain) -}}
+  {{- $_ := set $globals "acme" (.Values.global.acme) -}}
+  {{- $_ := set $globals "rbacEnabled" .Values.global.rbacEnabled -}}
+  {{- $_ := set $globals "releaseName" (print .Release.Name | toString) -}}
+  {{- $_ := set $globals "releaseNamespace" (print .Release.Namespace | toString) -}}
+  {{- $_ := set $globals "releaseVersion" (print .Chart.Version | toString) -}}
+  {{ $globals | toJson | print }}
+{{- end }}
+
+{{ define "defaultXcomSidecarImage" -}}
+{{- if .Values.global.privateRegistry.enabled -}}
+{{ .Values.global.privateRegistry.repository }}/ap-alpine:{{ .Values.global.airflow.images.xcom.tag }}
+{{- else -}}
+{{ .Values.global.airflow.images.xcom.repository}}:{{ .Values.global.airflow.images.xcom.tag }}
+{{- end }}
+{{- end }}
+
+{{ define "commander.image" -}}
+{{- if .Values.global.privateRegistry.enabled -}}
+{{ .Values.global.privateRegistry.repository }}/ap-commander:{{ .Values.images.commander.tag }}
+{{- else -}}
+{{ .Values.images.commander.repository }}:{{ .Values.images.commander.tag }}
+{{- end }}
+{{- end }}
+
+{{ define "houston.image" -}}
+{{- if .Values.global.privateRegistry.enabled -}}
+{{ .Values.global.privateRegistry.repository }}/ap-houston-api:{{ .Values.images.houston.tag }}
+{{- else -}}
+{{ .Values.images.houston.repository }}:{{ .Values.images.houston.tag }}
+{{- end }}
+{{- end }}
+
+{{ define "astroUI.image" -}}
+{{- if .Values.global.privateRegistry.enabled -}}
+{{ .Values.global.privateRegistry.repository }}/ap-astro-ui:{{ .Values.images.astroUI.tag }}
+{{- else -}}
+{{ .Values.images.astroUI.repository }}:{{ .Values.images.astroUI.tag }}
+{{- end }}
+{{- end }}
+
+{{ define "registry.image" -}}
+{{- if .Values.global.privateRegistry.enabled -}}
+{{ .Values.global.privateRegistry.repository }}/ap-registry:{{ .Values.images.registry.tag }}
+{{- else -}}
+{{ .Values.images.registry.repository }}:{{ .Values.images.registry.tag }}
+{{- end }}
+{{- end }}
+
+{{ define "dbBootstrapper.image" -}}
+{{- if .Values.global.privateRegistry.enabled -}}
+{{ .Values.global.privateRegistry.repository }}/ap-db-bootstrapper:{{ .Values.images.dbBootstrapper.tag }}
+{{- else -}}
+{{ .Values.images.dbBootstrapper.repository }}:{{ .Values.images.dbBootstrapper.tag }}
+{{- end }}
+{{- end }}
+
+{{ define "registry.docker.config" -}}
+  {{- $domain := printf "registry.%v" .Values.global.baseDomain }}
+  {{- $email := printf "admin@%v" .Values.global.baseDomain }}
+
+  {{- $user := randAlphaNum 16 -}}
+  {{- if .Values.global.privateRegistry.user -}}
+  {{- $user := .Values.global.privateRegistry.user -}}
+  {{- end }}
+
+  {{- $pass := randAlphaNum 32 -}}
+  {{- if .Values.global.privateRegistry.password -}}
+  {{- $pass := .Values.global.privateRegistry.password -}}
+  {{- end }}
+
+  {{- $config := dict "auths" -}}
+  {{- $auth := dict -}}
+  {{- $data := dict -}}
+  {{- $_ := set $data "username" $user -}}
+  {{- $_ := set $data "password" $pass -}}
+  {{- $_ := set $data "email" $email -}}
+  {{- $_ := set $data "auth" (printf "%v:%v" $user $pass | b64enc) -}}
+  {{- $_ := set $auth $domain $data -}}
+  {{- $_ := set $config "auths" $auth -}}
+  {{ $config | toJson | print }}
+{{- end }}
+
+{{ define "houston.backendSecret" -}}
+{{ default (printf "%s-houston-backend" .Release.Name) .Values.houston.backendSecretName }}
+{{- end }}
+
+{{ define "registry.authHeaderSecret" -}}
+{{ default (printf "%s-registry-auth-key" .Release.Name) .Values.registry.authHeaderSecretName }}
+{{- end }}
+
+{{ define "houston.airflowBackendSecret" -}}
+{{ default (printf "%s" (include "houston.backendSecret" .)) .Values.houston.airflowBackendSecretName }}
+{{- end }}
+
+{{ define "houston.jwtKeySecret" -}}
+{{ default (printf "%s-houston-jwt-signing-key" .Release.Name) .Values.houston.jwtSigningKeySecretName }}
+{{- end }}
+
+{{ define "houston.jwtCertificateSecret" -}}
+{{ default (printf "%s-houston-jwt-signing-certificate" .Release.Name) .Values.houston.jwtSigningCertificateSecretName }}
+{{- end }}
+
+{{ define "houston.jwtCertificateDir" -}}
+/etc/houston/tls/self
+{{- end }}
+
+{{ define "houston.jwtKeyPath" -}}
+{{ printf "%s/tls.key" (include "houston.jwtCertificateDir" .) }}
+{{- end }}
+
+{{ define "houston.jwtCertificatePath" -}}
+{{ printf "%s/tls.crt" (include "houston.jwtCertificateDir" .) }}
+{{- end }}
+
+{{ define "houston.jwtRegistryCertificatePath" -}}
+/etc/houston/tls/registry
+{{- end }}
+
+{{ define "houston.tlsRegistryCertificatePath" -}}
+/usr/local/share/ca-certificates/registry.crt
+{{- end }}
+
+{{ define "registry.authSecret" -}}
+{{ default (printf "%s-registry-auth" .Release.Name) .Values.registry.auth.secretName }}
+{{- end }}
+
+{{ define "registry.serviceAccountName" -}}
+{{- if and .Values.registry.serviceAccount.create .Values.global.rbacEnabled -}}
+{{ default (printf "%s-registry" .Release.Name ) .Values.registry.serviceAccount.name }}
+{{- else -}}
+    {{ default "default" .Values.registry.serviceAccount.name }}
+{{- end }}
+{{- end }}
+
+{{ define "astroUI.serviceAccountName" -}}
+{{- if and .Values.astroUI.serviceAccount.create .Values.global.rbacEnabled -}}
+{{ default (printf "%s-astro-ui" .Release.Name) .Values.astroUI.serviceAccount.name }}
+{{- else -}}
+    {{ default "default" .Values.astroUI.serviceAccount.name }}
+{{- end }}
+{{- end }}
+
+{{ define "houston.bootstrapperServiceAccountName" -}}
+{{- if and .Values.houston.serviceAccount.create .Values.global.rbacEnabled (not .Values.houston.backendSecretName) (not .Values.houston.backendConnection) }}
+{{- default (printf "%s-houston-bootstrapper" .Release.Name ) .Values.houston.serviceAccount.name }}
+{{- else -}}
+    {{ default "default" .Values.houston.serviceAccount.name }}
+{{- end }}
+{{- end }}
+
+{{ define "configSyncer.serviceAccountName" -}}
+{{- if and .Values.configSyncer.serviceAccount.create .Values.global.rbacEnabled -}}
+{{ default (printf "%s-config-syncer" .Release.Name ) .Values.configSyncer.serviceAccount.name }}
+{{- else -}}
+    {{ default "default" .Values.configSyncer.serviceAccount.name }}
+{{- end }}
+{{- end }}
+
+{{ define "commander.serviceAccountName" -}}
+{{- if and .Values.commander.serviceAccount.create .Values.global.rbacEnabled -}}
+{{ default (printf "%s-commander" .Release.Name ) .Values.commander.serviceAccount.name }}
+{{- else -}}
+    {{ default "default" .Values.commander.serviceAccount.name }}
+{{- end }}
+{{- end }}
+
+{{- define "registry.gcsVolume" }}
+- name: gcs-keyfile
+  secret:
+    secretName: astronomer-gcs-keyfile
+{{- end }}
+
+{{- define "registry.gcsVolumeMount" }}
+- name: gcs-keyfile
+  mountPath: /var/gcs-keyfile
+{{- end }}
+
+{{- define "registry.gcsConfig" }}
+gcs:
+  bucket: {{ .Values.registry.gcs.bucket }}
+  {{- if .Values.registry.gcs.useKeyfile }}
+  keyfile: {{ .Values.registry.gcs.keyfile }}
+  {{- end }}
+  rootdirectory: {{ .Values.registry.gcs.rootdirectory }}
+  chunksize: {{ .Values.registry.gcs.chunksize }}
+{{- end }}
+
+{{- define "registry.azureConfig" }}
+azure:
+  accountname: {{ .Values.registry.azure.accountname }}
+  accountkey: {{ .Values.registry.azure.accountkey }}
+  container: {{ .Values.registry.azure.container }}
+  realm: {{ .Values.registry.azure.realm }}
+{{- end }}
+
+{{- define "registry.s3Config" }}
+s3:
+  accesskey: {{ .Values.registry.s3.accesskey }}
+  secretkey: {{ .Values.registry.s3.secretkey }}
+  region: {{ .Values.registry.s3.region }}
+  bucket: {{ .Values.registry.s3.bucket }}
+  encrypt: {{ .Values.registry.s3.encrypt }}
+  keyid: {{ .Values.registry.s3.keyid }}
+  rootdirectory: {{ .Values.registry.s3.rootdirectory }}
+  regionendpoint: {{ .Values.registry.s3.regionendpoint }}
+{{- end }}
+
+{{- define "houston_environment" }}
+{{- /* Dynamically created envs */ -}}
+{{- range $i, $config := .Values.houston.env }}
+- name: {{ $config.name }}
+  value: {{ $config.value | quote }}
+{{- end }}
+{{- /* Dynamically created secret envs */ -}}
+{{- range $i, $config := .Values.houston.secret }}
+- name: {{ $config.envName }}
+  valueFrom:
+    secretKeyRef:
+      name: {{ $config.secretName }}
+      key: {{ default "value" $config.secretKey }}
+{{- end }}
+- name: NODE_ENV
+  value: "production"
+- name: DATABASE__CONNECTION
+  valueFrom:
+    secretKeyRef:
+      name: {{ template "houston.backendSecret" . }}
+      key: connection
+- name: JWT__CERT_PATH
+  value: {{ template "houston.jwtCertificateDir" . }}
+- name: JWT__REGISTRY__CERT_PATH
+  value: {{ template "houston.jwtRegistryCertificatePath" . }}
+- name: JWT__REGISTRY__ISSUER
+  value: {{ .Values.registry.auth.issuer }}
+- name: JWT__REGISTRY__SERVICE
+  value: {{ .Values.registry.auth.service }}
+- name: DATABASE_URL
+  valueFrom:
+    secretKeyRef:
+      name: {{ template "houston.backendSecret" . }}
+      key: connection
+{{- if not (((.Values.houston.config.deployments).database).connection) }}
+- name: DEPLOYMENTS__DATABASE__CONNECTION
+  valueFrom:
+    secretKeyRef:
+      name: {{ template "houston.airflowBackendSecret" . }}
+      key: connection
+{{- end}}
+  # These are set here for Houston's entrypoint script
+- name: HOUSTON__HOST
+  value: {{ .Release.Name }}-houston
+- name: COMMANDER__HOST
+  value: {{ .Release.Name }}-commander
+- name: COMMANDER__PORT
+  value: {{ .Values.ports.commanderGRPC | quote }}
+- name: REGISTRY__HOST
+  value: {{ .Release.Name }}-registry
+- name: REGISTRY__PORT
+  value: {{ .Values.ports.registryHTTP | quote }}
+- name: NATS__SERVERS
+  value: {{ template "houston.nats.servers" . }}
+- name: NATS__CLUSTER_ID
+  value: {{ .Release.Name }}-stan
+{{- if .Values.houston.updateRuntimeCheck.enabled }}
+- name: HOUSTON_SCRIPT_UPDATE_RUNTIME_SERVICE_URL
+  value: {{ .Values.houston.updateRuntimeCheck.url }}
+{{- end }}
+
+{{- end }}
+
+{{- define "houston_volume_mounts" }}
+- name: houston-config-volume
+  mountPath: /houston/config/production.yaml
+  subPath: production.yaml
+- name: houston-config-volume
+  mountPath: /houston/config/local-production.yaml
+  subPath: local-production.yaml
+{{ if and .Values.houston.runtimeReleasesConfig ( not .Values.houston.runtimeReleasesConfigMapName ) }}
+- name: houston-config-volume
+  mountPath: /houston/astro_runtime_releases.json
+  subPath: astro_runtime_releases.json
+{{- end }}
+- name: houston-jwt-key-volume
+  mountPath: {{ template "houston.jwtKeyPath" . }}
+  subPath: tls.key
+- name: houston-jwt-certificate-volume
+  mountPath: {{ template "houston.jwtCertificatePath" . }}
+  subPath: tls.crt
+{{ if .Values.global.tlsSecret }}
+- name: registry-tls-volume
+  mountPath: {{ template "houston.jwtRegistryCertificatePath" . }}
+- name: registry-tls-volume
+  mountPath: {{ template "houston.tlsRegistryCertificatePath" . }}
+  subPath: tls.crt
+{{- end }}
+{{ if and  .Values.global.nats.jetStream.enabled  .Values.global.nats.jetStream.tls  }}
+{{ $secretName :=  printf "%s-client" (include "nats.jestreamTLSSecret" . ) }}
+- name: nats-jetstream-client-tls-volume
+  mountPath: {{ include "houston.jetStreamSSLCertificateDir" . }}/{{ $secretName }}
+- name: nats-jetstream-client-tls-volume
+  mountPath: /usr/local/share/ca-certificates/{{ $secretName }}.crt
+  subPath: ca.crt
+{{- end }}
+{{- if .Values.houston.runtimeReleasesConfigMapName -}}
+- mountPath: /houston/astro_runtime_releases.json
+  name: runtimeversions
+  subPath: astro_runtime_releases.json
+{{- end }}
+{{- end }}
+
+{{- define "houston_volumes" }}
+- name: houston-config-volume
+  configMap:
+    name: {{ .Release.Name }}-houston-config
+    items:
+      - key: production.yaml
+        path: production.yaml
+      - key: local-production.yaml
+        path: local-production.yaml
+      {{ if and .Values.houston.RuntimeReleasesConfig (not .Values.houston.runtimeReleasesconfigMapName )}}
+      - key: astro_runtime_releases.json
+        path: astro_runtime_releases.json
+      {{- end }}
+
+- name: houston-jwt-key-volume
+  secret:
+    secretName: {{ template "houston.jwtKeySecret" . }}
+- name: houston-jwt-certificate-volume
+  secret:
+    secretName: {{ template "houston.jwtCertificateSecret" . }}
+{{ if .Values.global.tlsSecret }}
+- name: registry-tls-volume
+  secret:
+    secretName: {{ .Values.global.tlsSecret }}
+{{- end }}
+{{- if and  .Values.global.nats.jetStream.enabled  .Values.global.nats.jetStream.tls  }}
+{{ $secretName :=  printf "%s-client" (include "nats.jestreamTLSSecret" . ) }}
+- name: nats-jetstream-client-tls-volume
+  secret:
+    secretName: {{ $secretName }}
+{{- end }}
+{{- if .Values.houston.runtimeReleasesConfigMapName }}
+- name: runtimeversions
+  configMap:
+    name: {{ .Values.houston.runtimeReleasesConfigMapName }}
+{{- end }}
+{{- end }}
+
+{{- define "custom_ca_volume_mounts" }}
+{{ if .Values.global.privateCaCerts }}
+{{ range $secret_name := (.Values.global.privateCaCerts) }}
+- name: {{ $secret_name }}
+  mountPath: /usr/local/share/ca-certificates/{{ $secret_name }}.pem
+  subPath: cert.pem
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{- define "custom_ca_volumes"}}
+{{ if .Values.global.privateCaCerts }}
+{{ range .Values.global.privateCaCerts }}
+- name: {{ . }}
+  secret:
+    secretName: {{ . }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{- define "houston.nats.servers"}}
+{{- $ns := dict "servers" (list) -}}
+{{- $name := printf "%s-nats" .Release.Name -}}
+{{- range $i, $e := until (.Values.global.nats.replicas | int) -}}
+{{- $noop := printf "\"%s-%d.%s.%s.svc:4222\"" $name $i $name $.Release.Namespace | append $ns.servers | set $ns "servers" -}}
+{{- end }}
+{{- printf "'[%s]'" (join "," $ns.servers) -}}
+{{- end }}
+
+{{/*
+Return  the proper Storage Class
+*/}}
+{{- define "registry.storageClass" -}}
+{{/*
+Helm 2.11 supports the assignment of a value to a variable defined in a different scope,
+but Helm 2.9 and 2.10 does not support it, so we need to implement this if-else logic.
+This version prioritizes component-specific registry.persistence.storageClassName over global.storageClass.
+*/}}
+{{- printf "storageClassName: %s" (or .Values.registry.persistence.storageClassName .Values.global.storageClass | default "") | nindent 8 }}
+{{- end -}}
+
+{{- define "configSyncer.schedule" -}}
+{{- if .Values.configSyncer.schedule -}}
+{{- printf "%s" .Values.configSyncer.schedule | quote }}
+{{- else -}}
+{{/*
+Automatically generate a random minute and hour to try and spread cronjobs
+1. for minutes get a random digit (0 - 9) -> take last digit from adler32sum hash of the release name and multiply by 6
+2. Get same random digit and add 5
+*/}}
+{{- $randomDigit := (regexFind ".$" (adler32sum .Release.Name)) -}}
+{{- printf "%v %v * * *" (mul 6 $randomDigit) (add 5 $randomDigit) | quote -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Return the proper Docker Image Registry Secret Names
+*/}}
+{{- define "astronomer.imagePullSecrets" -}}
+{{- if and .Values.global.privateRegistry.enabled .Values.global.privateRegistry.secretName }}
+imagePullSecrets:
+  - name: {{ .Values.global.privateRegistry.secretName }}
+{{- end -}}
+{{- end -}}
+
+{{ define "fluentd.IndexPattern" -}}
+{{- if .Values.global.logging.indexNamePrefix -}}
+{{ .Values.global.logging.indexNamePrefix }}
+{{- else -}}
+fluentd
+{{- end -}}
+{{- end }}
+
+{{- define "houston.InternalAuthorization" -}}
+{{- if or .Values.houston.enableHoustonInternalAuthorization .Values.global.enableHoustonInternalAuthorization -}}
+true
+{{- else -}}
+false
+{{- end }}
+{{- end }}
+
+{{ define "houston.jetStreamSSLCertificateDir" -}}
+/etc/houston/jetstream/tls
+{{- end }}
+
+{{ define "jetstreamTLS" }}
+{{ $secretName :=  printf "%s-client" (include "nats.jestreamTLSSecret" . ) }}
+{{ if .Values.global.nats.jetStream.tls }}
+tlsEnabled: true
+tls:
+  caFile: {{ include "houston.jetStreamSSLCertificateDir" . }}/{{ $secretName  }}/ca.crt
+  certFile: {{ include "houston.jetStreamSSLCertificateDir" . }}/{{ $secretName  }}/tls.crt
+  keyFile: {{ include "houston.jetStreamSSLCertificateDir" . }}/{{ $secretName  }}/tls.key
+{{- else -}}
+tlsEnabled: false
+{{- end }}
+{{- end }}
+
+{{ define "nats.jestreamTLSSecret" -}}
+{{ default (printf "%s-jetstream-tls-certificate" .Release.Name)}}
+{{- end }}
+
+{{- define "dagOnlyDeployment.securityContexts" -}}
+{{- if or (eq ( toString ( .Values.global.dagOnlyDeployment.securityContexts.pod.fsGroup )) "auto") ( .Values.global.openshiftEnabled )  }}
+{{- omit  .Values.global.dagOnlyDeployment.securityContexts.pod "fsGroup" | toYaml | nindent 10 }}
+{{- else }}
+{{- .Values.global.dagOnlyDeployment.securityContexts | toYaml | nindent 10 }}
+{{- end -}}
+{{- end }}
+
+{{- define "configSyncer.securityContext" -}}
+{{- if .Values.configSyncer.securityContext }}
+{{ toYaml .Values.configSyncer.securityContext | indent 16 }}
+{{- else }}
+{{ toYaml .Values.securityContext | indent 16 }}
+{{- end }}
+{{- end }}

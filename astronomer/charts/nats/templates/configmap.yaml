@@ -1,0 +1,406 @@
+####################
+## Nats ConfigMap ##
+####################
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ template "nats.name" . }}-config
+  labels:
+    app: {{ template "nats.name" . }}
+    chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+  {{ if .Values.global.enableArgoCDAnnotation }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+  {{- end }}
+data:
+  nats.conf: |
+    # PID file shared with configuration reloader.
+    pid_file: "/var/run/nats/nats.pid"
+
+    ###############
+    #             #
+    # Monitoring  #
+    #             #
+    ###############
+    http: 8222
+    server_name: $POD_NAME
+
+    {{- if and  .Values.global.nats.jetStream.enabled  .Values.global.nats.jetStream.tls  }}
+      {{ $secretName :=  include "nats.jestreamTLSSecret" . }}
+      tls {
+        cert_file: /etc/nats-certs/client/{{ $secretName }}-client/tls.crt
+        key_file: /etc/nats-certs/client/{{ $secretName }}-client/tls.key
+        ca_file: /etc/nats-certs/client/{{ $secretName }}-client/ca.crt
+        }
+    {{- end }}
+
+    {{- if or  .Values.nats.tls ( not  .Values.global.nats.jetStream.enabled  ) }}
+    #####################
+    #                   #
+    # TLS Configuration #
+    #                   #
+    #####################
+    {{- with .Values.nats.tls }}
+    {{ $secretName := .secret.name }}
+    tls {
+       {{- with .cert }}
+       cert_file: /etc/nats-certs/clients/{{ $secretName }}/{{ . }}
+       {{- end }}
+
+       {{- with .key }}
+       key_file: /etc/nats-certs/clients/{{ $secretName }}/{{ . }}
+       {{- end }}
+
+       {{- with .ca }}
+       ca_file: /etc/nats-certs/clients/{{ $secretName }}/{{ . }}
+       {{- end }}
+
+       {{- with .insecure }}
+       insecure: {{ . }}
+       {{- end }}
+
+       {{- with .verify }}
+       verify: {{ . }}
+       {{- end }}
+
+       {{- with .verifyAndMap }}
+       verify_and_map: {{ . }}
+       {{- end }}
+
+       {{- with .curvePreferences }}
+       curve_preferences: {{ . }}
+       {{- end }}
+
+       {{- with .timeout }}
+       timeout: {{ . }}
+       {{- end }}
+    }
+    {{- end }}
+    {{- end }}
+
+    {{- if or .Values.global.nats.jetStream.enabled  .Values.nats.jetstream.enabled }}
+    ###################################
+    #                                 #
+    # NATS JetStream                  #
+    #                                 #
+    ###################################
+    jetstream {
+      {{- if .Values.nats.jetstream.encryption }}
+      {{- if .Values.nats.jetstream.encryption.key }}
+      key: {{ .Values.nats.jetstream.encryption.key | quote }}
+      {{- else if .Values.nats.jetstream.encryption.secret }}
+      key: $JS_KEY
+      {{- end}}
+      {{- end}}
+
+      {{- if .Values.nats.jetstream.memStorage.enabled }}
+      max_mem: {{ .Values.nats.jetstream.memStorage.size }}
+      {{- end }}
+
+      {{- if .Values.nats.jetstream.domain }}
+      domain: {{ .Values.nats.jetstream.domain }}
+      {{- end }}
+
+      {{- if .Values.nats.jetstream.fileStorage.enabled }}
+      store_dir: {{ .Values.nats.jetstream.fileStorage.storageDirectory }}
+
+      max_file:
+      {{- if .Values.nats.jetstream.fileStorage.existingClaim }}
+      {{- .Values.nats.jetstream.fileStorage.claimStorageSize  }}
+      {{- else }}
+      {{- .Values.nats.jetstream.fileStorage.size }}
+      {{- end }}
+      {{- end }}
+    }
+    {{- end }}
+
+    {{ if .Values.cluster.enabled }}
+    ###################################
+    #                                 #
+    # NATS Full Mesh Clustering Setup #
+    #                                 #
+    ###################################
+    cluster {
+      port: 6222
+
+      {{- if .Values.cluster.name}}
+
+      name: {{ .Release.Name }}-{{ .Values.cluster.name }}
+
+      {{- end }}
+
+      {{- if or  .Values.cluster.tls ( not  .Values.global.nats.jetStream.enabled  ) }}
+      {{- with .Values.cluster.tls }}
+      {{ $secretName := .secret.name }}
+      tls {
+         {{- with .cert }}
+         cert_file: /etc/nats-certs/cluster/{{ $secretName }}/{{ . }}
+         {{- end }}
+
+         {{- with .key }}
+         key_file: /etc/nats-certs/cluster/{{ $secretName }}/{{ . }}
+         {{- end }}
+
+         {{- with .ca }}
+         ca_file: /etc/nats-certs/cluster/{{ $secretName }}/{{ . }}
+         {{- end }}
+
+         {{- with .insecure }}
+         insecure: {{ . }}
+         {{- end }}
+
+         {{- with .verify }}
+         verify: {{ . }}
+         {{- end }}
+
+         {{- with .verifyAndMap }}
+         verify_and_map: {{ . }}
+         {{- end }}
+
+         {{- with .curvePreferences }}
+         curve_preferences: {{ . }}
+         {{- end }}
+
+         {{- with .timeout }}
+         timeout: {{ . }}
+         {{- end }}
+      }
+      {{- end }}
+      {{- end }}
+
+      {{- if and  .Values.global.nats.jetStream.enabled  .Values.global.nats.jetStream.tls  }}
+      {{ $secretName :=  include "nats.jestreamTLSSecret" . }}
+      tls {
+        cert_file: /etc/nats-certs/server/{{ $secretName }}/tls.crt
+        key_file: /etc/nats-certs/server/{{ $secretName }}/tls.key
+        ca_file: /etc/nats-certs/server/{{ $secretName }}/ca.crt
+        }
+      {{- end }}
+
+      routes = [
+        {{ template "nats.clusterRoutes" . }}
+      ]
+      cluster_advertise: $CLUSTER_ADVERTISE
+
+      {{- with .Values.cluster.noAdvertise }}
+      no_advertise: {{ . }}
+      {{- end }}
+
+      connect_retries: {{ .Values.nats.connectRetries }}
+    }
+    {{ end }}
+
+    {{- if .Values.leafnodes.enabled }}
+    #################
+    #               #
+    # NATS Leafnode #
+    #               #
+    #################
+
+    leafnodes {
+      listen: "0.0.0.0:7422"
+
+      {{- with .Values.leafnodes.noAdvertise }}
+      no_advertise: {{ . }}
+      {{- end }}
+
+      {{- with .Values.leafnodes.tls }}
+      {{ $secretName := .secret.name }}
+      tls {
+         {{- with .cert }}
+         cert_file: /etc/nats-certs/leafnodes/{{ $secretName }}/{{ . }}
+         {{- end }}
+
+         {{- with .key }}
+         key_file: /etc/nats-certs/leafnodes/{{ $secretName }}/{{ . }}
+         {{- end }}
+
+         {{- with .ca }}
+         ca_file: /etc/nats-certs/leafnodes/{{ $secretName }}/{{ . }}
+         {{- end }}
+
+         {{- with .insecure }}
+         insecure: {{ . }}
+         {{- end }}
+
+         {{- with .verify }}
+         verify: {{ . }}
+         {{- end }}
+
+         {{- with .verifyAndMap }}
+         verify_and_map: {{ . }}
+         {{- end }}
+
+         {{- with .curvePreferences }}
+         curve_preferences: {{ . }}
+         {{- end }}
+
+         {{- with .timeout }}
+         timeout: {{ . }}
+         {{- end }}
+      }
+      {{- end }}
+
+      remotes: [
+      {{- range .Values.leafnodes.remotes }}
+      {
+        {{- with .url }}
+        url: {{ . }}
+        {{- end }}
+
+        {{- with .credentials }}
+        credentials: "/etc/nats-creds/{{ .secret.name }}/{{ .secret.key }}"
+        {{- end }}
+      }
+      {{- end }}
+      ]
+    }
+    {{ end }}
+
+    {{- if .Values.gateway.enabled }}
+    #################
+    #               #
+    # NATS Gateways #
+    #               #
+    #################
+
+    gateway {
+      name: {{ .Values.gateway.name }}
+      port: 7522
+
+      {{- with .Values.gateway.tls }}
+      {{ $secretName := .secret.name }}
+      tls {
+         {{- with .cert }}
+         cert_file: /etc/nats-certs/gateways/{{ $secretName }}/{{ . }}
+         {{- end }}
+
+         {{- with .key }}
+         key_file: /etc/nats-certs/gateways/{{ $secretName }}/{{ . }}
+         {{- end }}
+
+         {{- with .ca }}
+         ca_file: /etc/nats-certs/gateways/{{ $secretName }}/{{ . }}
+         {{- end }}
+
+         {{- with .insecure }}
+         insecure: {{ . }}
+         {{- end }}
+
+         {{- with .verify }}
+         verify: {{ . }}
+         {{- end }}
+
+         {{- with .verifyAndMap }}
+         verify_and_map: {{ . }}
+         {{- end }}
+
+         {{- with .curvePreferences }}
+         curve_preferences: {{ . }}
+         {{- end }}
+
+         {{- with .timeout }}
+         timeout: {{ . }}
+         {{- end }}
+      }
+      {{- end }}
+
+      # Gateways array here
+      gateways: [
+        {{- range .Values.gateway.gateways }}
+        {
+          {{- with .name }}
+          name: {{ . }}
+          {{- end }}
+
+          {{- with .url }}
+          url: {{ . | quote }}
+          {{- end }}
+
+          {{- with .urls }}
+          urls: [{{ join "," . }}]
+          {{- end }}
+        },
+        {{- end }}
+      ]
+    }
+    {{ end }}
+
+    ####################
+    #                  #
+    # Logging Options  #
+    #                  #
+    ####################
+    {{- with .Values.nats.logging.debug }}
+    debug: {{ . }}
+    {{- end }}
+
+    {{- with .Values.nats.logging.trace }}
+    trace:  {{ . }}
+    {{- end }}
+
+    {{- with .Values.nats.logging.logtime }}
+    logtime: {{ . }}
+    {{- end }}
+
+    {{- with .Values.nats.logging.connectErrorReports }}
+    connect_error_reports: {{ . }}
+    {{- end }}
+
+    {{- with .Values.nats.logging.reconnectErrorReports }}
+    reconnect_error_reports: {{ . }}
+    {{- end }}
+
+    ##################
+    #                #
+    # Server Limits  #
+    #                #
+    ##################
+    {{- with .Values.nats.limits.maxConnections }}
+    max_connections: {{ . }}
+    {{- end }}
+    {{- with .Values.nats.limits.maxSubscriptions }}
+    max_subscriptions: {{ . }}
+    {{- end }}
+    {{- with .Values.nats.limits.maxPending }}
+    max_pending: {{ . }}
+    {{- end }}
+    {{- with .Values.nats.limits.maxControlLine }}
+    max_control_line: {{ . }}
+    {{- end }}
+    {{- with .Values.nats.limits.maxPayload }}
+    max_payload: {{ . }}
+    {{- end }}
+    {{- with .Values.nats.pingInterval }}
+    ping_interval: {{ . }}
+    {{- end }}
+    {{- with .Values.nats.maxPings }}
+    ping_max: {{ . }}
+    {{- end }}
+    {{- with .Values.nats.writeDeadline }}
+    write_deadline: {{ . | quote }}
+    {{- end }}
+    {{- with .Values.nats.writeDeadline }}
+    lame_duck_duration:  {{ . | quote }}
+    {{- end }}
+
+    {{- if .Values.auth.enabled }}
+    ##################
+    #                #
+    # Authorization  #
+    #                #
+    ##################
+    {{- if eq .Values.auth.resolver.type "memory" }}
+    resolver: MEMORY
+    include "accounts/{{ .Values.auth.resolver.configMap.key }}"
+    {{- end }}
+
+    {{- if eq .Values.auth.resolver.type "URL" }}
+    {{- with .Values.auth.resolver.url }}
+    resolver: URL({{ . }})
+    {{- end }}
+    operator: /etc/nats-config/operator/{{ .Values.auth.operatorjwt.configMap.key }}
+    system_account: {{ .Values.auth.systemAccount }}
+    {{- end }}
+
+    {{- end }}

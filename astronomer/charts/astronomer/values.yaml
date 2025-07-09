@@ -1,0 +1,520 @@
+# Default values for astronomer.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# This version number controls the default Airflow chart version that will be installed
+# when creating a new deployment in the system. This is also used to ensure all
+# child airflow deployments are kept up to date and on the latest version.
+airflowChartVersion: 1.15.5
+
+nodeSelector: {}
+affinity: {}
+tolerations: []
+
+# Images for Astronomer
+images:
+  commander:
+    repository: quay.io/astronomer/ap-commander
+    tag: 0.37.19
+    pullPolicy: IfNotPresent
+  registry:
+    repository: quay.io/astronomer/ap-registry
+    tag: 3.0.0-1
+    pullPolicy: IfNotPresent
+    # httpSecret: ~
+  houston:
+    repository: quay.io/astronomer/ap-houston-api
+    tag: 0.37.37
+    pullPolicy: IfNotPresent
+  astroUI:
+    repository: quay.io/astronomer/ap-astro-ui
+    tag: 0.37.12
+    pullPolicy: IfNotPresent
+  dbBootstrapper:
+    repository: quay.io/astronomer/ap-db-bootstrapper
+    tag: 0.37.4
+    pullPolicy: IfNotPresent
+
+
+securityContext:
+  runAsNonRoot: true
+
+astroUI:
+  replicas: 2
+  env: []
+  # This only applies when replicas > 3
+  maxUnavailable: 25%
+  resources: {}
+  #  limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  #  requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+  readinessProbe: {}
+  livenessProbe: {}
+  serviceAccount:
+    # Specifies whether a service account should be created
+    create: false
+    # Annotations to add to the service account
+    annotations: {}
+    # The name of the service account to use.
+    # If not set and create is true, a name is generated using the fullname template
+    name: ""
+  podAnnotations: {}
+  podSecurityContext: {}
+
+houston:
+  prismaConnectionLimit: 5
+  replicas: 2
+  # This only applies when replicas > 3
+  maxUnavailable: 25%
+  livenessProbe: {}
+    # httpGet:
+    #   path: /v1/healthz
+    #   port: {{ .Values.ports.houstonHTTP }}
+    # initialDelaySeconds: 30
+    # periodSeconds: 10
+    # failureThreshold: 10
+  readinessProbe: {}
+    # httpGet:
+    #   path: /v1/healthz
+    #   port: {{ .Values.ports.houstonHTTP }}
+    # initialDelaySeconds: 30
+    # periodSeconds: 10
+    # failureThreshold: 10
+
+  # Houston can regenerate its certificate authority on each 'helm upgrade'
+  # or leave it alone. If this is set to 'true', then all users are logged
+  # out on each helm upgrade. This is usually preferred 'true' for the case of
+  # enterprise, and 'false' for the case of SaaS, where upgrades should be
+  # without user interruption.
+  regenerateCaEachUpgrade: false
+  # Houston datastore
+  backendSecretName: ~
+  backendConnection:
+    {}
+    # user: ~
+    # pass: ~
+    # host: ~
+    # port: ~
+    # db: ~
+
+  # Airflow backends
+  airflowBackendSecretName: ~
+  airflowBackendConnection:
+    {}
+    # user: ~
+    # pass: ~
+    # host: ~
+    # port: ~
+    # db: ~
+
+  # This specifies an optional secret name to use to sign JWTs.
+  # If not specified, we use an auto-generated, self-signed certificate.
+  jwtSigningKeySecretName: ~
+  jwtSigningCertificateSecretName: ~
+
+  serviceAccount:
+    # Specifies whether a service account should be created
+    create: true
+    # Annotations to add to the service account
+    annotations: {}
+    # The name of the service account to use.
+    # If not set and create is true, a name is generated using the fullname template
+    name: ""
+
+  podAnnotations: {}
+
+  podSecurityContext: {}
+  env: []
+
+  # For example
+  #   `kubectl create secret generic my-secret --from-literal=connection=smtps://USERNAME:PW@HOST/?pool=true`
+  # and then set:
+  #
+  # secret:
+  # - envName: "EMAIL__SMTP_URL"
+  #   secretName: "my-scret"
+  #   secretKey: "connection"
+  secret: []
+
+  resources: {}
+  #  limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  #  requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+  # Any Houston configuration. Reference here:
+  # https://github.com/astronomer/houston-api/blob/main/config/default.yaml
+  config:
+    nats:
+      ackWait: 600000
+
+  # Worker to connect to NATS
+  worker:
+    enabled: true
+    replicas: 2
+    readinessProbe: {}
+    livenessProbe: {}
+
+  # Automatically upgrade Airflow deployments to the latest
+  # version specified by Houston configuration.
+  # This runs as a Job after helm upgrades.
+  upgradeDeployments:
+    # Enable this helm hook on upgrade
+    enabled: true
+
+    # Only run on deployments marked as canary
+    canary: false
+
+  # Cleanup deployments that have been soft-deleted in Houston
+  # This runs as a CronJob
+  cleanupDeployments:
+    # Enable cleanup CronJob
+    enabled: true
+
+    # Default here is to run at midnight every night https://crontab.guru/#0_0_*_*_*
+    schedule: "0 0 * * *"
+
+    # Cleanup deployments older than this many days
+    olderThan: 14
+
+    # Print out the deployments that should be cleaned up and skip actual cleanup
+    dryRun: false
+
+    # Only run on deployments marked as canary
+    canary: false
+
+    readinessProbe: {}
+    livenessProbe: {}
+
+  # Cleanup airflow db data
+  # This runs as a CronJob
+  cleanupAirflowDb:
+    # Enable cleanup CronJob
+    enabled: false
+
+    # Default run is at 5:23 every morning https://crontab.guru/#23_5_*_*_*
+    schedule: "23 5 * * *"
+
+    # Cleanup deployments older than this many days
+    olderThan: 365
+
+    # Output path of archived data csv export
+    outputPath: "/tmp"
+
+    # Delete archived tables
+    dropArchives: true
+
+    # Print out the deployments that should be cleaned up and skip actual cleanup
+    dryRun: false
+
+    # Name of file storage provider, supported providers - aws/azure/gcp/local
+    provider: local
+
+    # Name of the provider bucket name / local file path
+    bucketName: "/tmp"
+
+    # Airflow provider connection id to connect to provider bucket, read more - https://airflow.apache.org/docs/apache-airflow/stable/howto/connection.html
+    providerEnvSecretName: ""
+
+    # Run cleanup on specific table or list of tables in a comma separated format
+    tables: ""
+
+    readinessProbe: {}
+    livenessProbe: {}
+
+  # Cleanup task usage data and task audit data in Houston
+  # This runs as a CronJob
+  cleanupTaskUsageData:
+    # Run at 23:40 every night
+    schedule: "40 23 * * *"  # https://crontab.guru/#40_23_*_*_*
+
+    # Cleanup deployments older than this many days
+    olderThan: 90
+
+    # Print out the deployments that should be cleaned up and skip actual cleanup
+    dryRun: false
+
+    # Only run on deployments marked as canary
+    canary: false
+
+    readinessProbe: {}
+    livenessProbe: {}
+
+  # Cleanup task usage data and task audit data in Houston
+  # This runs as a CronJob
+  cleanupDeployRevisions:
+    # Enable cleanup CronJob
+    enabled: true
+
+    # Run at 23:11 every night
+    schedule: "11 23 * * *"  # https://crontab.guru/#11_23_*_*_*
+
+    # Cleanup deploy revisions older than this many days
+    olderThan: 90
+
+    readinessProbe: {}
+    livenessProbe: {}
+
+  # Check for Astronomer Platform Updates
+  # This runs as a CronJob
+  updateCheck:
+    # Enable check updates CronJob
+    enabled: false
+
+    # url for update service
+    url: https://updates.astronomer.io/astronomer-platform
+
+    # Default here is to run at midnight every night https://crontab.guru/#0_0_*_*_*
+    schedule: "0 0 * * *"
+
+    readinessProbe: {}
+    livenessProbe: {}
+
+  # Check for Astronomer Runtime Updates
+  # This runs as a CronJob
+  updateRuntimeCheck:
+    # Enable check updates CronJob
+    enabled: true
+
+    # url for update service
+    url: https://updates.astronomer.io/astronomer-runtime
+
+    # Default here is to run at 00:43 every night https://crontab.guru/#43_0_*_*_*
+    schedule: "43 0 * * *"
+
+    readinessProbe: {}
+    livenessProbe: {}
+
+  # Populate daily task usage data
+  # This runs as a CronJob
+
+  populateDailyTaskMetrics:
+    # Default here is to run at 00:08 every night
+    schedule: "8 0 * * *"
+
+    # Print out the aggregated daily task usage data that should be inserted and skip actual insertion
+    dryRun: false
+
+    readinessProbe: {}
+    livenessProbe: {}
+
+  populateHourlyTaskAuditMetrics:
+    # Run at minute 57 every hour https://crontab.guru/#57_*_*_*_*
+    schedule: "57 * * * *"
+
+    readinessProbe: {}
+    livenessProbe: {}
+
+  runtimeReleasesConfigMapName: ~
+  runtimeReleasesConfig:
+    # example of usage:
+    # below are default mandatory fields
+    # runtimeVersions:
+    #  12.1.1:
+    #    metadata:
+    #      airflowVersion: 2.10.2
+    #      channel: stable
+
+  # Add extra containers here
+  extraContainers: []
+
+  # Add volumes to your containers
+  extraVolumes: []
+
+  # Add custom annotation for houston ingress
+  ingress:
+    annotation: {}
+  enableHoustonInternalAuthorization: false
+
+  updateResourceStrategy:
+    readinessProbe: {}
+    livenessProbe: {}
+
+  dbMigration:
+    readinessProbe: {}
+    livenessProbe: {}
+
+  taskUsageMetrics:
+    readinessProbe: {}
+    livenessProbe: {}
+
+configSyncer:
+  enabled: true
+  # If not provided, will generate a random hour and minutes to spread cronjob workloads.
+  schedule: ~
+  securityContext: {}
+  resources: {}
+  serviceAccount:
+    # Specifies whether a service account should be created
+    create: true
+    # Annotations to add to the service account
+    annotations: {}
+    # The name of the service account to use.
+    # If not set and create is true, a name is generated using the fullname template
+    name: ""
+
+  podSecurityContext: {}
+
+  readinessProbe: {}
+  livenessProbe: {}
+
+
+commander:
+  replicas: 2
+  env: []
+  # This only applies when replicas > 3
+  maxUnavailable: 25%
+  resources:
+    {}
+    # limits:
+    #  cpu: 100m
+    #  memory: 128Mi
+    # requests:
+    #  cpu: 100m
+    #  memory: 128Mi
+  livenessProbe: {}
+    # failureThreshold: 5
+    # httpGet:
+    #   path: /healthz
+    #   port: {{ .Values.ports.commanderHTTP }}
+    #   scheme: HTTP
+    # initialDelaySeconds: 10
+    # periodSeconds: 10
+  readinessProbe: {}
+    # httpGet:
+    #   path: /healthz
+    #   port: {{ .Values.ports.commanderHTTP }}
+    # initialDelaySeconds: 10
+    # periodSeconds: 10
+  podAnnotations: {}
+  podSecurityContext: {}
+
+
+  airGapped:
+    # Enable airgapped mode
+    enabled: false
+  upgradeTimeout: 600
+
+  serviceAccount:
+    # Specifies whether a service account should be created
+    create: true
+    # Annotations to add to the service account
+    annotations: {}
+    # The name of the service account to use.
+    # If not set and create is true, a name is generated using the fullname template
+    name: ""
+
+
+  # Add extra containers to your commander deployment.
+  extraContainers: []
+
+  # Add extra volumes to your commander deployment.
+  extraVolumes: []
+
+registry:
+  # flag to bypass secure (tls) authentication to astronomer registry
+  enableInsecureAuth: False
+  # k8s secret name for registry to use to authenticate to houston when sending notifications
+  authHeaderSecretName: ~
+  replicas: 1
+  resources: {}
+  #  limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  #  requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+  livenessProbe: {}
+    # httpGet:
+    #   path: /
+    #   port: {{ .Values.ports.registryHTTP }}
+    # initialDelaySeconds: 10
+    # periodSeconds: 10
+    # timeoutSeconds: 5
+
+  readinessProbe: {}
+    # httpGet:
+    #   path: /
+    #   port: {{ .Values.ports.registryHTTP }}
+    # initialDelaySeconds: 10
+    # periodSeconds: 10
+    # timeoutSeconds: 5
+
+  podSecurityContext: {}
+  extraEnv: []
+
+  serviceAccount:
+    # Specifies whether a service account should be created
+    create: false
+    # Annotations to add to the service account
+    annotations: {}
+    # The name of the service account to use.
+    # If not set and create is true, a name is generated using the fullname template
+    name: ""
+    # Specifies whether a scc privilege should be created for custom sa
+    sccEnabled: false
+
+  persistence:
+    # Enable persistent storage
+    enabled: true
+    # Size of volume to provision
+    size: 100Gi
+    # If using a custom storageClass, pass name ref to all statefulSets here
+    storageClassName: ~
+    annotations: {}
+
+  auth:
+    secretName: ~
+    connection: ~
+    service: "docker-registry"
+    issuer: "houston"
+
+  gcs:
+    enabled: false
+    bucket: ~
+    useKeyfile: true
+    keyfile: /var/gcs-keyfile/astronomer-gcs-keyfile
+    rootdirectory: /
+    chunksize: "5242880"
+
+  azure:
+    enabled: false
+    accountname: ~
+    accountkey: ~
+    container: ~
+    realm: ~
+
+  s3:
+    enabled: false
+    accesskey: ~
+    secretkey: ~
+    region: ~
+    bucket: ~
+    encrypt: false
+    keyid: ~
+    rootdirectory: ~
+    regionendpoint: ~
+
+  notifications:
+    timeout: 30s
+
+  redirect:
+    disable: false
+
+  logLevel: info
+
+  podAnnotations: {}
+
+ports:
+  houstonHTTP: 8871
+  commanderHTTP: 8880
+  commanderGRPC: 50051
+  astroUIHTTP: 8080
+  registryHTTP: 5000
+  registryScrape: 5001

@@ -1,0 +1,72 @@
+########################################
+## Houston Populate Daily Task Metrics CronJob
+########################################
+{{- if .Values.global.taskUsageMetricsEnabled }}
+apiVersion: {{ include "apiVersion.batch.cronjob" . }}
+kind: CronJob
+metadata:
+  name: "{{ .Release.Name }}-houston-populate-hourly-ta-metrics"
+  labels:
+    tier: astronomer
+    component: houston-populate-hourly-ta-metrics
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  schedule: {{ .Values.houston.populateHourlyTaskAuditMetrics.schedule }}
+  # The cron job does not allow concurrent runs; if it is time for a new job run and the previous job run hasn't finished yet, the cron job skips the new job run
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            tier: astronomer
+            component: houston-populate-hourly-ta-metrics
+            release: {{ .Release.Name }}
+            app: houston-populate-hourly-ta-metrics
+            version: {{ .Chart.Version }}
+            {{- include "global.podLabels" . | nindent 12 }}
+          {{- if or .Values.global.podAnnotations .Values.global.istio.enabled }}
+          annotations:
+          {{- if .Values.global.istio.enabled }}
+            sidecar.istio.io/inject: "false"
+          {{- end }}
+          {{- if .Values.global.podAnnotations }}
+{{ toYaml .Values.global.podAnnotations | indent 12 }}
+          {{- end }}
+          {{- end }}
+        spec:
+          serviceAccountName: {{ template "houston.bootstrapperServiceAccountName" . }}
+          securityContext: {{ toYaml .Values.houston.podSecurityContext | nindent 12 }}
+          nodeSelector:
+{{ toYaml (default .Values.global.platformNodePool.nodeSelector .Values.nodeSelector) | indent 12 }}
+          affinity:
+{{ toYaml (default .Values.global.platformNodePool.affinity .Values.affinity) | indent 12 }}
+          tolerations:
+{{ toYaml (default .Values.global.platformNodePool.tolerations .Values.tolerations) | indent 12 }}
+          restartPolicy: Never
+{{- include "astronomer.imagePullSecrets" . | indent 10 }}
+          containers:
+            - name: populate-daily-task-metrics
+              image: {{ template "houston.image" . }}
+              imagePullPolicy: {{ .Values.images.houston.pullPolicy }}
+              securityContext: {{ toYaml .Values.securityContext | nindent 16 }}
+              resources: {{ toYaml .Values.houston.resources | nindent 16 }}
+              args: ["yarn", "populate-hourly-task-audit-metrics"]
+              volumeMounts:
+                {{- include "houston_volume_mounts" . | indent 16 }}
+                {{- include "custom_ca_volume_mounts" . | indent 16 }}
+              env:
+                {{- include "houston_environment" . | indent 16 }}
+              {{- if .Values.houston.taskUsageMetrics.readinessProbe }}
+              readinessProbe: {{ tpl (toYaml .Values.houston.taskUsageMetrics.readinessProbe) . | nindent 16 }}
+              {{- end }}
+              {{- if .Values.houston.taskUsageMetrics.livenessProbe }}
+              livenessProbe: {{ tpl (toYaml .Values.houston.taskUsageMetrics.livenessProbe) . | nindent 16 }}
+              {{- end }}
+          volumes:
+            {{- include "houston_volumes" . | indent 12 }}
+            {{- include "custom_ca_volumes" . | indent 12 }}
+{{- end }}

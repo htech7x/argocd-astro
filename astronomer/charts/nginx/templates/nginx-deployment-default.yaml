@@ -1,0 +1,70 @@
+######################################
+## NGINX Default backend deployment ##
+######################################
+{{- if .Values.defaultBackend.enabled }}
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: {{ template "nginx.fullname" . }}-default-backend
+  labels:
+    tier: {{ template "nginx.name" . }}
+    component: default-backend
+    chart: {{ template "nginx.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  replicas: {{ .Values.replicasDefaultBackend }}
+  selector:
+    matchLabels:
+      tier: {{ template "nginx.name" . }}
+      component: default-backend
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        tier: {{ template "nginx.name" . }}
+        component: default-backend
+        release: {{ .Release.Name }}
+        app: {{ template "nginx.name" . }}
+        version: {{ .Chart.Version }}
+        {{- include "global.podLabels" . | nindent 8 }}
+{{- if or .Values.global.podAnnotations .Values.defaultBackend.podAnnotations }}
+      annotations:
+{{- if .Values.global.podAnnotations }}
+{{ toYaml .Values.global.podAnnotations | indent 8 }}
+{{- end }}
+{{- if .Values.defaultBackend.podAnnotations }}
+{{ toYaml .Values.defaultBackend.podAnnotations | indent 8 }}
+{{- end }}
+{{- end }}
+    spec:
+      serviceAccountName: {{ template "defaultBackend.serviceAccountName" . }}
+      securityContext: {{ toYaml .Values.defaultBackend.podSecurityContext | nindent 8 }}
+      nodeSelector: {{ toYaml (default .Values.global.platformNodePool.nodeSelector .Values.nodeSelector) | nindent 8 }}
+      affinity: {{ toYaml (default .Values.global.platformNodePool.affinity .Values.affinity) | nindent 8 }}
+      tolerations: {{ toYaml (default .Values.global.platformNodePool.tolerations .Values.tolerations) | nindent 8 }}
+      terminationGracePeriodSeconds: 60
+      {{- include "nginx.imagePullSecrets" . | nindent 6 }}
+      containers:
+        - name: default-backend
+          image: {{ template "nginx.defaultBackend.image" . }}
+          imagePullPolicy: {{ .Values.images.defaultBackend.pullPolicy }}
+          securityContext: {{ toYaml .Values.securityContext | nindent 12 }}
+          {{- if .Values.defaultBackend.readinessProbe }}
+          readinessProbe: {{ toYaml .Values.defaultBackend.readinessProbe | nindent 12 }}
+          {{- end }}
+          {{ if .Values.defaultBackend.livenessProbe }}
+          livenessProbe: {{ tpl (toYaml .Values.defaultBackend.livenessProbe) . | nindent 12 }}
+          {{ else }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.ports.defaultBackendHTTP }}
+              scheme: HTTP
+            initialDelaySeconds: 30
+            timeoutSeconds: 5
+          {{- end }}
+          resources: {{ toYaml .Values.defaultBackend.resources | nindent 12 }}
+          ports:
+            - containerPort: {{ .Values.ports.defaultBackendHTTP }}
+{{ end }}

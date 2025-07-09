@@ -1,0 +1,148 @@
+# Default values for nginx.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+nodeSelector: {}
+affinity: {}
+tolerations: []
+
+images:
+  nginx:
+    repository: quay.io/astronomer/ap-nginx
+    tag: 1.11.6
+    pullPolicy: IfNotPresent
+  defaultBackend:
+    repository: quay.io/astronomer/ap-default-backend
+    tag: 0.28.31
+    pullPolicy: IfNotPresent
+
+podSecurityContext: {}
+securityContext:
+  runAsUser: 101
+  runAsNonRoot: true
+  capabilities:
+    drop:
+      - ALL
+  allowPrivilegeEscalation: false
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ~
+
+podAnnotations: {}
+
+ingressClass: ~
+
+replicas: 2
+replicasDefaultBackend: 2
+# These are only applicable when respective replicas > 3
+maxUnavailable: 25%
+maxUnavailableDefaultBackend: 25%
+
+minReadySeconds: 0
+
+resources: {}
+#  limits:
+#   cpu: 100m
+#   memory: 128Mi
+#  requests:
+#   cpu: 100m
+#   memory: 128Mi
+
+livenessProbe: {}
+  # httpGet:
+  #   path: /healthz
+  #   port: {{ .Values.ports.healthz }}
+  # initialDelaySeconds: 30
+  # timeoutSeconds: 5
+readinessProbe: {}
+
+# Service type that Nginx can be. Default is LoadBalancer but "ClusterIP" and "NodePort" are both valid.
+serviceType: "LoadBalancer"
+
+# NodePort, requires serviceType NodePort. Default of nil auto-assigns a port
+httpNodePort: ~
+httpsNodePort: ~
+metricsNodePort: ~
+
+# dict of annotations to add to the ingress controller
+ingressAnnotations: {}
+
+# AntiAffinity can be "hard" or "soft"
+antiAffinity: "soft"
+
+# String IP address the nginx ingress should bind to
+loadBalancerIP: ~
+
+# String IP address that the service should list as an external IP. Currently only 1 address is supported
+externalIPs: ~
+
+# List used to restrict IPs that can reach the nginx ingress
+loadBalancerSourceRanges: []
+
+# Set to 'true' when deploying to a private EKS cluster
+privateLoadBalancer: false
+
+# Dependent on cloud provider
+preserveSourceIP: false
+
+proxyConnectTimeout: 15
+proxyReadTimeout: 600
+proxySendTimeout: 600
+proxyBodySize: "1024m"
+hstsIncludeSubdomains: false
+serverNameHashBucketSize: 256
+
+ports:
+  http: 8080
+  https: 8443
+  defaultBackendHTTP: 8080
+  healthz: 10254
+  metrics: 10254
+
+# Election ID to use for status update
+electionId: ingress-controller-leader
+
+# Enables the annotation validation feature
+enableAnnotationValidations: false
+
+# This must be used together with service annotation service.kubernetes.io/topology-mode="auto"
+enableTopologyAwareRouting: false
+
+disableLeaderElection: false
+
+# -- Duration a leader election is valid before it's getting re-elected, e.g. `15s`, `10m` or `1h`. (Default: 30s)
+electionTTL: ""
+
+# -- This configuration defines if Ingress Controller should allow users to set
+# their own *-snippet annotations, otherwise this is forbidden / dropped
+# when users add those annotations.
+# Global snippets in ConfigMap are still respected
+allowSnippetAnnotations: true
+
+defaultBackend:
+  enabled: true
+  resources: {}
+  readinessProbe: {}
+  livenessProbe: {}
+  podAnnotations: {}
+  podSecurityContext: {}
+  serviceAccount:
+    # Specifies whether a service account should be created
+    create: true
+    # Annotations to add to the service account
+    annotations: {}
+    # The name of the service account to use.
+    # If not set and create is true, a name is generated using the fullname template
+    name: ~
+
+cspPolicy:
+  cdnEnabled: true
+  connectsrc: "cdn.jsdelivr.net"
+  fontsrc: "fonts.gstatic.com"
+  scriptsrc: "fonts.googleapis.com cdn.jsdelivr.net"

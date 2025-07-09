@@ -1,0 +1,85 @@
+# Default values for kube-state.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+nodeSelector: {}
+affinity: {}
+tolerations: []
+
+images:
+  kubeState:
+    repository: quay.io/astronomer/ap-kube-state
+    tag: 2.15.0-1
+    pullPolicy: IfNotPresent
+
+securityContext:
+  runAsNonRoot: true
+
+podSecurityContext: {}
+
+env: {}
+resources:
+  limits:
+   cpu: 100m
+   memory: 256Mi
+  requests:
+   cpu: 100m
+   memory: 256Mi
+
+livenessProbe: {}
+#  httpGet:
+#    path: /healthz
+#    port: {{ .Values.ports.scrape }}
+#  initialDelaySeconds: 5
+#  timeoutSeconds: 5
+readinessProbe: {}
+
+ports:
+  scrape: 8080
+  telemetry: 8081
+
+replicas: 1
+
+extraArgs:
+- "--metric-labels-allowlist=namespaces=[*],pods=[*],configmaps=[*]"
+
+priorityClassName: ~
+
+serviceAccount:
+  # Specifies whether a ServiceAccount should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the ServiceAccount to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ~
+
+collectors:
+  #- certificatesigningrequests
+  #- mutatingwebhookconfigurations
+  #- persistentvolumes
+  #- validatingwebhookconfigurations
+  #- volumeattachments
+  #- storageclasses
+  #- leases
+  #- nodes
+  #- endpoints
+  #- poddisruptionbudgets
+  - daemonsets
+  - namespaces
+  - configmaps
+  - cronjobs
+  - deployments
+  - horizontalpodautoscalers
+  - ingresses
+  - jobs
+  - limitranges
+  - networkpolicies
+  - persistentvolumeclaims
+  - pods
+  - replicasets
+  - replicationcontrollers
+  - resourcequotas
+  - secrets
+  - services
+  - statefulsets
